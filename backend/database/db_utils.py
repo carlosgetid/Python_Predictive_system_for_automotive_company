@@ -1,54 +1,66 @@
+import logging
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from backend.config import DATABASE_URI
 
-# Creamos un "motor" de conexión usando SQLAlchemy
-# Este motor manejará las conexiones a la BD de forma eficiente
-try:
-    engine = create_engine(DATABASE_URI)
-except ImportError:
-    raise ImportError("Asegúrate de haber instalado 'SQLAlchemy' y 'mysql-connector-python'")
-except Exception as e:
-    print(f"Error al crear el engine de la BD: {e}")
-    engine = None
+# Configuración de logging
+# IMPORTANTE: Añadimos esta línea que no estaba en tu versión anterior
+logging.basicConfig(level=logging.INFO)
 
-def test_db_connection():
-    """Intenta conectar a la BD y ejecutar una consulta simple."""
-    if engine is None:
-        return False, "El motor de la BD no se inicializó."
+def get_db_engine():
+    """
+    Crea y retorna un motor de SQLAlchemy.
+    """
     try:
-        with engine.connect() as connection:
-            result = connection.execute(text("SELECT 1"))
-            return True, "Conexión a la BD exitosa."
+        engine = create_engine(DATABASE_URI)
+        # Probar la conexión
+        with engine.connect() as conn:
+            logging.info("Conexión a la base de datos establecida con éxito.")
+        return engine
     except Exception as e:
-        return False, f"Error al conectar a la BD: {e}"
+        logging.error(f"Error al crear el motor de base de datos: {e}")
+        # En un escenario real, podríamos querer reintentar o salir
+        return None
 
-def save_dataframe_to_db(df, table_name):
+def save_dataframe_to_db(df, table_name, engine):
     """
     Guarda un DataFrame de pandas en la tabla especificada.
+    Si la tabla existe, añade los datos (append).
     
-    Args:
-        df (pd.DataFrame): El dataframe a guardar.
-        table_name (str): El nombre de la tabla de destino.
+    NOTA: Modificamos esta función para que acepte el 'engine' como argumento.
     """
     if engine is None:
-        raise ConnectionError("No se pudo conectar a la base de datos (engine no inicializado).")
+        logging.error("No se proporcionó un motor de base de datos válido.")
+        return False, "Error interno: Motor de BD no inicializado."
         
     try:
-        # Tarea HU-001.T5: Crear la lógica para guardar los datos validados
-        # 'if_exists='append'' añade los datos sin borrar los existentes.
-        # 'index=False' evita que pandas guarde el índice del dataframe como una columna.
+        # Usar 'to_sql' para guardar el DataFrame
+        # if_exists='append' añade los datos si la tabla ya existe
+        # index=False para no guardar el índice del DataFrame como una columna
         df.to_sql(table_name, con=engine, if_exists='append', index=False)
         
-        # Devolvemos un resumen de los datos guardados
-        summary = {
-            "filas_guardadas": len(df),
-            "primera_fecha": str(df['fecha'].min()),
-            "ultima_fecha": str(df['fecha'].max())
-        }
-        return summary
-
+        logging.info(f"Se guardaron {len(df)} filas en la tabla '{table_name}'.")
+        return True, f"Datos guardados con éxito en '{table_name}'."
+        
     except Exception as e:
-        # Manejamos errores comunes, como que la tabla no exista
-        raise Exception(f"Error al guardar en la BD: {e}")
+        logging.error(f"Error al guardar datos en la BD: {e}")
+        # Devolver el error para que la API pueda manejarlo
+        return False, f"Error al guardar en laBD: {e}"
+
+def fetch_all_data(engine, table_name="ventas_historicas"):
+    """
+    Obtiene todos los datos de una tabla y los devuelve como un DataFrame.
+    """
+    if engine is None:
+        logging.error("No se proporcionó un motor de base de datos válido para leer.")
+        return None
+    
+    try:
+        query = f"SELECT * FROM {table_name};"
+        df = pd.read_sql(query, con=engine)
+        logging.info(f"Se leyeron {len(df)} filas de la tabla '{table_name}'.")
+        return df
+    except Exception as e:
+        logging.error(f"Error al leer datos de la BD: {e}")
+        return None
 
