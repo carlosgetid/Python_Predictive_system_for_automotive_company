@@ -1,46 +1,38 @@
-from flask import Flask, jsonify
+import logging
+from flask import Flask
 from flask_cors import CORS
-
-# Importamos nuestro blueprint de rutas
+from backend.config import DEBUG_MODE
+# Importamos el Blueprint que contiene TODAS nuestras rutas (/upload, /predict, /history)
 from backend.api.routes import api_bp
-from backend.database.db_utils import test_db_connection
 
-# Inicializamos la aplicación Flask
-app = Flask(__name__)
+# Configurar logging (para que se vea en la consola)
+logging.basicConfig(level=logging.INFO)
 
-# --- Configuración de CORS ---
-# Habilitamos CORS (Cross-Origin Resource Sharing) para permitir
-# que nuestro frontend (en localhost:8501) pueda hablar
-# con nuestro backend (en localhost:5000).
-CORS(app)
+def create_app():
+    """
+    Fábrica de la aplicación Flask.
+    """
+    app = Flask(__name__)
+    CORS(app) # Habilita CORS para todas las rutas
 
-# --- Registro de Blueprints (Rutas) ---
-# Le decimos a la app que use las rutas definidas en api_bp
-# con el prefijo /api.
-# Por lo tanto, nuestro endpoint de carga será: /api/upload
-# ¡¡ACTUALIZACIÓN IMPORTANTE!!: Modifiqué el frontend para apuntar a /api/upload
-# Voy a actualizar el frontend para que apunte a /api/upload
-app.register_blueprint(api_bp, url_prefix='/')
+    # Registrar el Blueprint de la API
+    # Todas las rutas definidas en routes.py ahora estarán bajo '/'
+    app.register_blueprint(api_bp, url_prefix='/')
 
-# --- Ruta de Verificación (Health Check) ---
-@app.route('/')
-def health_check():
-    """Ruta simple para verificar que el servidor está vivo."""
-    return jsonify({"status": "Backend_is_running"})
+    @app.route('/health')
+    def health_check():
+        """
+        Un endpoint simple para verificar que el servidor está vivo.
+        """
+        logging.info("Health check endpoint fue llamado.")
+        return {"status": "ok"}, 200
+    
+    return app
 
-@app.route('/test_db')
-def test_db():
-    """Ruta para verificar la conexión a la base de datos."""
-    success, message = test_db_connection()
-    if success:
-        return jsonify({"status": "OK", "message": message})
-    else:
-        return jsonify({"status": "ERROR", "message": message}), 500
-
-
-# --- Punto de entrada para ejecutar la app ---
+# --- Punto de entrada para la ejecución ---
 if __name__ == '__main__':
-    # Ejecutamos la app en modo debug (se reinicia con cambios)
-    # y en el puerto 5000.
-    app.run(debug=True, port=5000)
+    app = create_app()
+    logging.info("Iniciando servidor Flask en http://127.0.0.1:5000")
+    # Usamos host y port definidos para asegurarnos
+    app.run(host='127.0.0.1', port=5000, debug=DEBUG_MODE)
 
