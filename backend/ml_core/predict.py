@@ -6,139 +6,158 @@ import logging
 from tensorflow.keras.models import load_model
 from datetime import datetime
 
-# --- 1. Constantes y Carga de Artefactos ---
+# --- 1. Constantes y Carga de Artefactos (MVP) ---
 
-# Definimos las rutas a los artefactos que guardamos en la HU-002
 MODELS_DIR = "models"
+# Nombres originales de los artefactos del MVP
 ENCODER_PATH = os.path.join(MODELS_DIR, "label_encoder_producto.joblib")
 SCALER_PATH = os.path.join(MODELS_DIR, "min_max_scaler.joblib")
-MODEL_PATH = os.path.join(MODELS_DIR, "mlp_model.keras") # Usaremos el modelo MLP
+# Usaremos el modelo MLP por defecto para las predicciones
+MODEL_PATH = os.path.join(MODELS_DIR, "mlp_model.keras")
 
 def load_artifacts():
     """
-    Carga todos los artefactos de preprocesamiento y el modelo entrenado
-    desde el disco.
+    Carga los artefactos del MVP (encoder, scaler, model) desde el disco.
     """
+    artifacts = {}
     try:
-        # Cargar el codificador (para 'id_producto')
-        encoder = joblib.load(ENCODER_PATH)
-        
-        # Cargar el escalador (para normalizar 0-1)
-        scaler = joblib.load(SCALER_PATH)
-        
-        # Cargar el modelo de Red Neuronal entrenado
-        model = load_model(MODEL_PATH)
-        
-        logging.info("Artefactos de ML (encoder, scaler, model) cargados con éxito.")
-        return encoder, scaler, model
-    
-    except FileNotFoundError:
-        logging.error("Error crítico: No se encontraron los archivos del modelo. "
-                      "Asegúrate de ejecutar el pipeline de entrenamiento (training.py) primero.")
-        return None, None, None
+        if not os.path.exists(ENCODER_PATH):
+            raise FileNotFoundError(f"No se encontró el encoder en {ENCODER_PATH}")
+        artifacts['encoder'] = joblib.load(ENCODER_PATH)
+
+        if not os.path.exists(SCALER_PATH):
+            raise FileNotFoundError(f"No se encontró el scaler en {SCALER_PATH}")
+        artifacts['scaler'] = joblib.load(SCALER_PATH)
+
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(f"No se encontró el modelo MLP en {MODEL_PATH}")
+        artifacts['model'] = load_model(MODEL_PATH)
+
+        logging.info("Artefactos de ML (MVP: encoder, scaler, model MLP) cargados con éxito.")
+        return artifacts
+
+    except FileNotFoundError as e:
+        logging.error(f"Error crítico: {e}. Asegúrate de ejecutar el pipeline de entrenamiento (training.py) primero.")
+        return None # Indica fallo en la carga
     except Exception as e:
-        logging.error(f"Error al cargar artefactos: {e}")
-        return None, None, None
+        logging.error(f"Error inesperado al cargar artefactos: {e}", exc_info=True)
+        return None
 
-# --- Cargamos los artefactos UNA SOLA VEZ cuando el script se importa ---
-# Esto es mucho más eficiente que cargarlos en cada predicción.
-encoder, scaler, model = load_artifacts()
+# --- Cargamos los artefactos UNA SOLA VEZ ---
+artifacts = load_artifacts()
+# Ahora accedemos a ellos como artifacts['encoder'], artifacts['scaler'], artifacts['model']
 
-# --- 2. Lógica de Predicción (Replicar Preprocesamiento) ---
+# --- 2. Lógica de Predicción (Replicar Preprocesamiento MVP) ---
 
 def make_single_prediction(id_producto, fecha_str):
     """
-    Realiza una predicción de demanda para un solo producto y fecha.
-    
+    Realiza una predicción de demanda (cantidad) para un solo producto y fecha (MVP).
+
     Args:
         id_producto (str): El SKU del producto (ej. "FIL-A-001").
         fecha_str (str): La fecha para la predicción (ej. "2025-11-20").
-        
+
     Returns:
         int: La cantidad de demanda predicha (redondeada hacia arriba).
-        None: Si ocurre un error.
+        None: Si ocurre un error o el producto es desconocido.
     """
-    if model is None or encoder is None or scaler is None:
-        logging.error("Modelos no cargados. Abortando predicción.")
+    # Verificar si los artefactos se cargaron correctamente
+    if artifacts is None:
+        logging.error("Artefactos no cargados. Abortando predicción.")
         return None
 
+    encoder = artifacts.get('encoder')
+    scaler = artifacts.get('scaler')
+    model = artifacts.get('model')
+
+    if not all([encoder, scaler, model]):
+         logging.error("Uno o más artefactos (encoder, scaler, model) faltan. Abortando predicción.")
+         return None
+
+
     try:
-        # --- Paso A: Replicar la Ingeniería de Características ---
-        # (Exactamente como en preprocessing.py)
-        fecha = pd.to_datetime(fecha_str)
+        # --- Paso A: Replicar Ingeniería de Características (MVP) ---
+        try:
+            fecha = pd.to_datetime(fecha_str)
+        except ValueError:
+            logging.error(f"Formato de fecha inválido: {fecha_str}. Use YYYY-MM-DD.")
+            return None # Error si la fecha no es válida
+
         data = {
-            'id_producto': [id_producto],
+            'id_producto': [str(id_producto)], # Asegurar que sea string
             'mes': [fecha.month],
             'dia_del_mes': [fecha.day],
             'dia_de_la_semana': [fecha.dayofweek],
             'anio': [fecha.year]
         }
-        
-        # Creamos un DataFrame con los nombres de columnas exactos que el
-        # escalador espera, en el orden correcto.
+
+        # Orden exacto esperado por el scaler del MVP
         column_order = ['id_producto', 'mes', 'dia_del_mes', 'dia_de_la_semana', 'anio']
         df_pred = pd.DataFrame(data, columns=column_order)
 
-        # --- Paso B: Replicar el Preprocesamiento (Codificación) ---
-        # Usamos .transform() para aplicar la codificación ya aprendida.
-        # Añadimos manejo de error por si el 'id_producto' es nuevo.
-        try:
-            df_pred['id_producto'] = encoder.transform(df_pred['id_producto'])
-        except ValueError as e:
-            # Este error ocurre si el 'id_producto' es desconocido (ej. 'NUEVO-PROD-001')
-            logging.warning(f"ID de producto desconocido: {id_producto}. "
-                            f"No se puede realizar la predicción. Error: {e}")
-            # En un caso real, podríamos devolver 0 o un valor por defecto.
-            # Por ahora, para el MVP, devolvemos None.
-            return None
+        # --- Paso B: Replicar Codificación (MVP con manejo de desconocidos) ---
+        known_labels = set(encoder.classes_)
+        id_prod_encoded = encoder.transform([str(id_producto)])[0] if str(id_producto) in known_labels else -1
 
-        # --- Paso C: Replicar el Preprocesamiento (Escalado) ---
-        # Usamos .transform() para escalar los datos usando el min/max ya aprendido.
-        # El escalador espera un DataFrame con todas las columnas numéricas.
-        df_scaled = scaler.transform(df_pred)
-        
-        # --- Paso D: Realizar la Predicción ---
-        # El modelo Keras espera un array de NumPy
+        if id_prod_encoded == -1:
+            logging.warning(f"ID de producto desconocido: {id_producto}. No se puede realizar la predicción.")
+            return None # Devolvemos None si el producto no se vio en entrenamiento
+
+        df_pred['id_producto'] = id_prod_encoded # Reemplazar string con el código numérico
+
+        # --- Paso C: Replicar Escalado (MVP) ---
+        # Asegurarse que todas las columnas son numéricas antes de escalar
+        for col in column_order:
+             df_pred[col] = pd.to_numeric(df_pred[col], errors='coerce')
+
+        if df_pred.isnull().values.any():
+             logging.error("Valores no numéricos encontrados antes de escalar.")
+             return None # Error si hay nulos después de convertir a numérico
+
+        # Aplicar el escalado aprendido
+        df_scaled = scaler.transform(df_pred) # Scaler espera todas las 5 columnas numéricas
+
+        # --- Paso D: Realizar la Predicción con MLP ---
         prediction_raw = model.predict(df_scaled)
-        
-        # El resultado de Keras es un array 2D (ej. [[23.45]]), lo extraemos
         prediction_value = prediction_raw[0][0]
-        
-        # No podemos predecir una cantidad negativa
-        if prediction_value < 0:
-            prediction_value = 0
-            
-        # Redondeamos hacia ARRIBA (techo). Para inventario, es más seguro
-        # predecir 24 unidades que 23, si el modelo dice 23.4.
+
+        # La predicción de cantidad no puede ser negativa
+        prediction_value = max(0, prediction_value)
+
+        # Redondear hacia ARRIBA (techo) para ser conservador con el inventario
         prediction_final = int(np.ceil(prediction_value))
-        
-        logging.info(f"Predicción generada para {id_producto} en {fecha_str}: {prediction_final}")
+
+        logging.info(f"Predicción (MVP) generada para {id_producto} en {fecha_str}: {prediction_final} unidades")
         return prediction_final
 
     except Exception as e:
-        logging.error(f"Error durante la predicción: {e}")
+        logging.error(f"Error inesperado durante la predicción: {e}", exc_info=True)
         return None
 
 # --- Bloque de prueba (Opcional) ---
 if __name__ == "__main__":
-    # Esto te permite probar el archivo directamente
-    # python -m backend.ml_core.predict
     logging.basicConfig(level=logging.INFO)
-    
-    # Probamos con un ID de producto que SÍ existe en los datos de prueba
-    id_prueba_1 = "FIL-A-001" 
-    fecha_prueba = "2025-11-20"
-    
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+    tf.get_logger().setLevel('ERROR')
+
+    # Probamos con un ID de producto que SÍ debería existir si los datos son los mismos
+    id_prueba_1 = "FIL-A-001" # Ajusta si tu encoder tiene otros productos
+    fecha_prueba = "2024-11-20" # Una fecha futura razonable
+
     prediccion = make_single_prediction(id_prueba_1, fecha_prueba)
     if prediccion is not None:
-        print(f"\n--- PRUEBA DE PREDICCIÓN ---")
-        print(f"Predicción para {id_prueba_1} en {fecha_prueba}: {prediccion}")
-        print("--------------------------\n")
-        
+        print(f"\n--- PRUEBA DE PREDICCIÓN (MVP) ---")
+        print(f"Predicción para {id_prueba_1} en {fecha_prueba}: {prediccion} unidades")
+        print("----------------------------------\n")
+    else:
+         print(f"Fallo la predicción para {id_prueba_1}. ¿El producto existe en los datos de entrenamiento y los artefactos están cargados?")
+
+
     # Probamos con un ID de producto que NO existe
     id_prueba_2 = "PRODUCTO-NUEVO-XYZ"
-    print(f"Probando con producto desconocido: {id_prueba_2}")
+    print(f"Probando con producto desconocido: {id_prueba_2}...")
     prediccion_nueva = make_single_prediction(id_prueba_2, fecha_prueba)
     if prediccion_nueva is None:
         print("Prueba exitosa: El producto no se encontró, como se esperaba.")
-
+    else:
+        print(f"Error en la prueba: Se obtuvo una predicción ({prediccion_nueva}) para un producto desconocido.")
