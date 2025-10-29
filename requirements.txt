@@ -9,3 +9,4 @@ mysql-connector-python
 SQLAlchemy
 flask-cors
 joblib
+openpyxl
