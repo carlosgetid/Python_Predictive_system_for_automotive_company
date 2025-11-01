@@ -1,11 +1,19 @@
 import logging
 import pandas as pd
 from flask import Blueprint, request, jsonify
-import datetime # Necesario para isinstance check
+import datetime 
+import os # Importar os para la lógica de lectura de Excel
 
 # Importar lógica (asegúrate que las rutas relativas sean correctas)
 from backend.database.db_utils import get_db_engine, save_dataframe_to_db
-from backend.ml_core.predict import make_single_prediction
+
+# --- INICIO DE MODIFICACIÓN (Importar predict y training) ---
+# Importamos la lógica de predicción (que carga los modelos al inicio)
+import backend.ml_core.predict as predictor
+# Importamos la lógica de entrenamiento como un módulo
+import backend.ml_core.training as training_pipeline
+# --- FIN DE MODIFICACIÓN ---
+
 
 # Blueprint
 api_bp = Blueprint('api', __name__)
@@ -25,6 +33,9 @@ def upload_file():
 
         file = request.files['file']
         df = None
+        required_cols_raw = set() # Inicializar
+        rename_map = {} # Inicializar
+
         # --- Lectura y Validación de Formato ---
         try:
             if file.filename.endswith('.csv'):
@@ -37,13 +48,17 @@ def upload_file():
             elif file.filename.endswith(('.xls', '.xlsx')):
                 # Si es Excel, leer la hoja 'Detalle'
                 # Asegúrate que 'openpyxl' esté en requirements.txt
-                # Usar try-except por si la hoja no existe
                 try:
                     df = pd.read_excel(file, sheet_name='Detalle', engine='openpyxl')
+                    logging.info(f"Leída hoja 'Detalle' del archivo Excel '{file.filename}'.")
                 except ValueError as sheet_error:
                     # Captura error si la hoja 'Detalle' no se encuentra
                     logging.error(f"Error al leer hoja 'Detalle' de '{file.filename}': {sheet_error}")
                     return jsonify({"error": "El archivo Excel no contiene una hoja llamada 'Detalle'."}), 400
+                except Exception as excel_read_error:
+                     # Captura otros errores de lectura de Excel (ej. archivo corrupto)
+                    logging.error(f"Error general al leer Excel '{file.filename}': {excel_read_error}", exc_info=True)
+                    return jsonify({"error": f"Error al leer el archivo Excel: {excel_read_error}"}), 400
 
                 # Nombres esperados en la hoja 'Detalle'
                 required_cols_raw = {'SKU', 'Fecha Venta', 'Cantidad'}
@@ -58,51 +73,62 @@ def upload_file():
                 return jsonify({"error": "Formato de archivo no soportado (solo .csv, .xls, .xlsx)"}), 400
 
         except Exception as e:
-            logging.error(f"Error al leer el archivo '{file.filename}': {e}", exc_info=True)
+            logging.error(f"Error al intentar leer el archivo '{file.filename}': {e}", exc_info=True)
             return jsonify({"error": f"Error general al leer el archivo: {e}"}), 400
 
         # Verificar si la lectura fue exitosa
         if df is None:
+             logging.error("DataFrame quedó como None después de intentar leer el archivo.")
              return jsonify({"error": "No se pudo leer el archivo correctamente."}), 400
+        if df.empty:
+             logging.warning(f"El archivo '{file.filename}' (o la hoja 'Detalle') está vacío.")
+             return jsonify({"error": "El archivo o la hoja 'Detalle' está vacía."}), 400
 
 
         # --- Validación de Columnas (Adaptada) ---
         actual_cols = set(df.columns)
         if not required_cols_raw.issubset(actual_cols):
             missing = required_cols_raw - actual_cols
-            expected = "'SKU', 'Fecha Venta', 'Cantidad'" if rename_map else "'id_producto', 'fecha', 'cantidad_vendida'"
-            logging.warning(f"Archivo '{file.filename}' rechazado. Faltan columnas {expected}: {missing}")
-            return jsonify({"error": f"Faltan columnas obligatorias ({expected}): {missing}"}), 400
+            expected_str = "'SKU', 'Fecha Venta', 'Cantidad'" if rename_map else "'id_producto', 'fecha', 'cantidad_vendida'"
+            logging.warning(f"Archivo '{file.filename}' rechazado. Faltan columnas {expected_str}: {missing}")
+            return jsonify({"error": f"Faltan columnas obligatorias ({expected_str}): {missing}"}), 400
 
         # --- Selección y Renombrado ---
+        logging.info(f"Columnas encontradas: {list(actual_cols)}. Columnas requeridas: {list(required_cols_raw)}")
         # Seleccionar solo las columnas necesarias ANTES de renombrar
         df_selected = df[list(required_cols_raw)].copy()
         # Renombrar si es necesario (si era Excel)
         if rename_map:
             df_selected.rename(columns=rename_map, inplace=True)
+            logging.info(f"Columnas renombradas a: {list(df_selected.columns)}")
 
-        # Ahora df_selected tiene las columnas 'id_producto', 'fecha', 'cantidad_vendida'
         df_to_save = df_selected
 
         # --- Limpieza y Formateo (Misma lógica de antes) ---
+        logging.info("Iniciando limpieza y formateo de datos...")
         try:
             df_to_save['fecha'] = pd.to_datetime(df_to_save['fecha'], errors='coerce')
             rows_before = len(df_to_save)
             df_to_save.dropna(subset=['fecha'], inplace=True)
-            if len(df_to_save) < rows_before:
-                logging.warning(f"Se eliminaron {rows_before - len(df_to_save)} filas por formato de fecha inválido.")
-        except Exception as e:
-             logging.error(f"Error inesperado convirtiendo 'fecha': {e}", exc_info=True)
-             return jsonify({"error": f"Error procesando la columna 'fecha': {e}"}), 400
+            dropped_rows = rows_before - len(df_to_save)
+            if dropped_rows > 0:
+                logging.warning(f"Se eliminaron {dropped_rows} filas por formato de fecha inválido.")
 
-        df_to_save['cantidad_vendida'] = pd.to_numeric(df_to_save['cantidad_vendida'], errors='coerce')
-        df_to_save['cantidad_vendida'] = df_to_save['cantidad_vendida'].fillna(0).astype(int)
-        df_to_save = df_to_save[df_to_save['cantidad_vendida'] > 0]
+            df_to_save['cantidad_vendida'] = pd.to_numeric(df_to_save['cantidad_vendida'], errors='coerce')
+            df_to_save.dropna(subset=['cantidad_vendida'], inplace=True) # Eliminar nulos de cantidad
+            df_to_save['cantidad_vendida'] = df_to_save['cantidad_vendida'].astype(int)
+            df_to_save = df_to_save[df_to_save['cantidad_vendida'] > 0] # Mantener solo > 0
+            df_to_save['id_producto'] = df_to_save['id_producto'].astype(str)
+
+        except Exception as e:
+             logging.error(f"Error inesperado durante la limpieza de datos: {e}", exc_info=True)
+             return jsonify({"error": f"Error procesando los datos extraídos: {e}"}), 400
 
         if df_to_save.empty:
-            return jsonify({"error": "No quedan datos válidos después de la limpieza."}), 400
-
-        df_to_save['id_producto'] = df_to_save['id_producto'].astype(str)
+            logging.warning("No quedan datos válidos después de la limpieza completa (ej. fechas inválidas o cantidad <= 0).")
+            return jsonify({"error": "No se encontraron datos válidos (SKU, Fecha Venta válida, Cantidad > 0) en el archivo/hoja."}), 400
+        
+        logging.info(f"Limpieza completada. {len(df_to_save)} filas válidas listas para guardar.")
 
         # --- Guardado en BD ---
         engine = get_db_engine()
@@ -114,19 +140,22 @@ def upload_file():
 
         if success:
             summary = {
-                "filas_recibidas_hoja_detalle": len(df), # Filas leídas de 'Detalle' o CSV
+                "archivo_recibido": file.filename,
+                "filas_leidas_hoja_detalle_o_csv": len(df),
                 "filas_validas_guardadas": len(df_to_save)
             }
+            logging.info(f"Datos guardados con éxito. Resumen: {summary}")
             return jsonify({"message": message, "data_summary": summary}), 201
         else:
+            logging.error(f"Fallo al guardar en BD: {message}")
             return jsonify({"error": message}), 500
 
     except Exception as e:
-        logging.error(f"[ERROR /upload Mejorado] {e}", exc_info=True)
-        return jsonify({"error": f"Ocurrió un error interno inesperado: {e}"}), 500
+        logging.error(f"[ERROR /upload Mejorado - General] {e}", exc_info=True)
+        return jsonify({"error": f"Ocurrió un error interno inesperado en el servidor: {e}"}), 500
 
 
-# --- Endpoint /predict (Revertido a MVP) ---
+# --- Endpoint /predict (ACTUALIZADO para usar el predictor importado) ---
 @api_bp.route('/predict', methods=['POST'])
 def predict():
     """
@@ -143,15 +172,16 @@ def predict():
         if not id_producto or not fecha_str:
             return jsonify({"error": "Faltan 'id_producto' o 'fecha_str'"}), 400
 
-        # Llamar a la lógica de ML (predict.py)
-        prediccion = make_single_prediction(id_producto, fecha_str)
+        # --- CAMBIO CLAVE ---
+        # Llamar a la lógica de ML usando el módulo 'predictor' importado
+        # La función make_single_prediction ahora viene de 'predictor'
+        prediccion = predictor.make_single_prediction(id_producto, fecha_str)
 
         if prediccion is None:
             # make_single_prediction devuelve None si el producto es desconocido o hay error
             logging.warning(f"Predicción fallida para {id_producto} en {fecha_str}")
-            # Devolver 404 si el producto es desconocido, 500 si fue otro error interno
-            # (Simplificamos a 404 por ahora, predict.py ya logueó la razón)
-            return jsonify({"error": f"No se pudo generar predicción para '{id_producto}'. Verifique el ID o la fecha."}), 404
+            # Devolver 404 si el producto es desconocido
+            return jsonify({"error": f"No se pudo generar predicción para '{id_producto}'. Verifique el ID o la fecha, o si el producto es nuevo."}), 404
         else:
             # ¡Éxito!
             return jsonify({"prediccion": prediccion}), 200
@@ -199,19 +229,16 @@ def get_history():
 
         # --- CORRECCIÓN CLAVE ---
         # Convertir la columna 'fecha' a string ANTES de convertir a dict
-        # Asegurarse que la columna 'fecha' exista
         if 'fecha' in df_hist.columns:
             # Formato YYYY-MM-DD es estándar y bueno para JSON/JS
              df_hist['fecha'] = pd.to_datetime(df_hist['fecha']).dt.strftime('%Y-%m-%d')
         else:
             logging.warning(f"La consulta de historial para '{id_producto}' no devolvió la columna 'fecha'.")
-            # Devolver un error o un historial vacío, dependiendo del caso esperado
-            return jsonify({"historial": []}), 200 # Opcional: devolver 200 con lista vacía si la falta de fecha no es crítica
+            return jsonify({"historial": []}), 200 
 
         # Asegurar que cantidad_vendida sea numérica (int)
         if 'cantidad_vendida' in df_hist.columns:
              df_hist['cantidad_vendida'] = pd.to_numeric(df_hist['cantidad_vendida'], errors='coerce').fillna(0).astype(int)
-
 
         # Convertir a lista de diccionarios (JSON serializable)
         historial = df_hist.to_dict('records')
@@ -228,4 +255,55 @@ def get_history():
 def health_check():
     """Verifica si el servidor está vivo."""
     return {"status": "ok"}, 200
+
+
+# --- INICIO DE NUEVO CÓDIGO (ENDPOINT DE RE-ENTRENAMIENTO) ---
+@api_bp.route('/api/v1/trigger_retraining', methods=['POST'])
+def trigger_retraining():
+    """
+    Endpoint protegido (por la UI) para disparar el re-entrenamiento
+    y la recarga de modelos en vivo.
+    """
+    logging.info("Solicitud de re-entrenamiento recibida por la API...")
+    
+    try:
+        # 1. Ejecutar el pipeline de entrenamiento
+        # (Llama a la función 'train_and_evaluate' de training.py)
+        # Esta función ahora devuelve un diccionario con estado y métricas.
+        training_results = training_pipeline.train_and_evaluate()
+        
+        # Verificar si el entrenamiento falló
+        if not training_results or training_results.get("status") != "success":
+            error_msg = training_results.get("message", "Error desconocido durante el entrenamiento.")
+            logging.error(f"El pipeline de entrenamiento falló: {error_msg}")
+            return jsonify({"error": "Falló el pipeline de entrenamiento.", "details": error_msg}), 500
+
+        # 2. Recargar los modelos en la memoria de 'predict.py'
+        # (Llama a la función 'reload_artifacts' de predict.py)
+        logging.info("Entrenamiento completado. Recargando modelos en vivo...")
+        reload_success = predictor.reload_artifacts() # ¡Llamada clave!
+        
+        if not reload_success:
+            # Esto es un estado crítico: el entrenamiento funcionó pero el servidor
+            # sigue usando los modelos antiguos.
+            logging.error("¡FALLO CRÍTICO! Entrenamiento exitoso, pero no se pudieron recargar los nuevos modelos en vivo.")
+            return jsonify({
+                "error": "Entrenamiento exitoso, pero la recarga de modelos falló. Se requiere reinicio manual del servidor backend.",
+                "metrics": training_results.get("metrics", {})
+            }), 500
+        
+        logging.info("Modelos recargados en vivo con éxito.")
+        
+        # 3. Devolver éxito y métricas al frontend
+        return jsonify({
+            "message": "Re-entrenamiento completado y modelos recargados en vivo con éxito.",
+            "metrics": training_results.get("metrics", {}),
+            "save_status": training_results.get("save_status", [])
+        }), 200
+
+    except Exception as e:
+        # Captura de error general para el endpoint
+        logging.error(f"Error inesperado durante /trigger_retraining: {e}", exc_info=True)
+        return jsonify({"error": f"Error interno del servidor durante el re-entrenamiento: {str(e)}"}), 500
+# --- FIN DE NUEVO CÓDIGO ---
 

@@ -5,73 +5,100 @@ import numpy as np
 import logging
 from tensorflow.keras.models import load_model
 from datetime import datetime
+import tensorflow as tf # Importar tf
 
 # --- 1. Constantes y Carga de Artefactos (MVP) ---
 
 MODELS_DIR = "models"
-# Nombres originales de los artefactos del MVP
 ENCODER_PATH = os.path.join(MODELS_DIR, "label_encoder_producto.joblib")
 SCALER_PATH = os.path.join(MODELS_DIR, "min_max_scaler.joblib")
-# Usaremos el modelo MLP por defecto para las predicciones
-MODEL_PATH = os.path.join(MODELS_DIR, "mlp_model.keras")
+MODEL_PATH = os.path.join(MODELS_DIR, "mlp_model.keras") 
 
-def load_artifacts():
+# --- INICIO DE LA MODIFICACIÓN (RECARGA EN VIVO) ---
+
+# Caché global para mantener los artefactos en memoria
+# Usamos un diccionario para poder verificar si está vacío o no.
+artifacts_cache = {}
+
+def load_artifacts_into_memory():
     """
-    Carga los artefactos del MVP (encoder, scaler, model) desde el disco.
+    Carga todos los artefactos de preprocesamiento y el modelo entrenado
+    desde el disco y los almacena en la caché global 'artifacts_cache'.
+    
+    Returns:
+        bool: True si la carga fue exitosa, False si falló.
     """
-    artifacts = {}
+    global artifacts_cache # Indicar que estamos modificando la variable global
+    
+    artifacts_temp = {} # Diccionario temporal
     try:
+        # Limpiar logs de TensorFlow antes de cargar el modelo
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+        tf.get_logger().setLevel('ERROR')
+
         if not os.path.exists(ENCODER_PATH):
             raise FileNotFoundError(f"No se encontró el encoder en {ENCODER_PATH}")
-        artifacts['encoder'] = joblib.load(ENCODER_PATH)
+        artifacts_temp['encoder'] = joblib.load(ENCODER_PATH)
 
         if not os.path.exists(SCALER_PATH):
             raise FileNotFoundError(f"No se encontró el scaler en {SCALER_PATH}")
-        artifacts['scaler'] = joblib.load(SCALER_PATH)
+        artifacts_temp['scaler'] = joblib.load(SCALER_PATH)
 
         if not os.path.exists(MODEL_PATH):
             raise FileNotFoundError(f"No se encontró el modelo MLP en {MODEL_PATH}")
-        artifacts['model'] = load_model(MODEL_PATH)
+        # Cargar el modelo. Es importante limpiar sesiones anteriores si Keras se queja.
+        tf.keras.backend.clear_session()
+        artifacts_temp['model'] = load_model(MODEL_PATH)
 
-        logging.info("Artefactos de ML (MVP: encoder, scaler, model MLP) cargados con éxito.")
-        return artifacts
+        logging.info("Artefactos de ML (MVP: encoder, scaler, model MLP) cargados/recargados con éxito.")
+        
+        # Actualizar la caché global de forma atómica
+        artifacts_cache = artifacts_temp
+        return True
 
     except FileNotFoundError as e:
-        logging.error(f"Error crítico: {e}. Asegúrate de ejecutar el pipeline de entrenamiento (training.py) primero.")
-        return None # Indica fallo en la carga
+        logging.error(f"Error crítico al cargar artefactos: {e}. Asegúrate de ejecutar el pipeline de entrenamiento.")
+        artifacts_cache = {} # Limpiar caché en caso de fallo
+        return False
     except Exception as e:
         logging.error(f"Error inesperado al cargar artefactos: {e}", exc_info=True)
-        return None
+        artifacts_cache = {}
+        return False
 
-# --- Cargamos los artefactos UNA SOLA VEZ ---
-artifacts = load_artifacts()
-# Ahora accedemos a ellos como artifacts['encoder'], artifacts['scaler'], artifacts['model']
+def reload_artifacts():
+    """
+    Función pública expuesta para forzar la recarga de los artefactos
+    (llamada después del re-entrenamiento por routes.py).
+    """
+    logging.info("Solicitud de recarga de artefactos recibida...")
+    return load_artifacts_into_memory()
+
+# --- Carga inicial de artefactos ---
+# Se ejecuta UNA SOLA VEZ cuando el backend (app.py) importa este archivo.
+if not load_artifacts_into_memory():
+    logging.critical("¡FALLO EN LA CARGA INICIAL DE ARTEFACTOS! El endpoint /predict no funcionará.")
+
+# --- FIN DE LA MODIFICACIÓN (RECARGA EN VIVO) ---
+
 
 # --- 2. Lógica de Predicción (Replicar Preprocesamiento MVP) ---
 
 def make_single_prediction(id_producto, fecha_str):
     """
     Realiza una predicción de demanda (cantidad) para un solo producto y fecha (MVP).
-
-    Args:
-        id_producto (str): El SKU del producto (ej. "FIL-A-001").
-        fecha_str (str): La fecha para la predicción (ej. "2025-11-20").
-
-    Returns:
-        int: La cantidad de demanda predicha (redondeada hacia arriba).
-        None: Si ocurre un error o el producto es desconocido.
     """
-    # Verificar si los artefactos se cargaron correctamente
-    if artifacts is None:
-        logging.error("Artefactos no cargados. Abortando predicción.")
+    # --- CAMBIO: Verificar la caché global ---
+    if not artifacts_cache:
+        logging.error("Artefactos no están cargados en memoria. Abortando predicción.")
         return None
 
-    encoder = artifacts.get('encoder')
-    scaler = artifacts.get('scaler')
-    model = artifacts.get('model')
+    # Obtener artefactos de la caché global
+    encoder = artifacts_cache.get('encoder')
+    scaler = artifacts_cache.get('scaler')
+    model = artifacts_cache.get('model')
 
     if not all([encoder, scaler, model]):
-         logging.error("Uno o más artefactos (encoder, scaler, model) faltan. Abortando predicción.")
+         logging.error("Uno o más artefactos (encoder, scaler, model) faltan en la caché. Abortando predicción.")
          return None
 
 
@@ -97,6 +124,7 @@ def make_single_prediction(id_producto, fecha_str):
 
         # --- Paso B: Replicar Codificación (MVP con manejo de desconocidos) ---
         known_labels = set(encoder.classes_)
+        # Aplicar transformación, asignar -1 a desconocidos (LabelEncoder no maneja desconocidos nativamente)
         id_prod_encoded = encoder.transform([str(id_producto)])[0] if str(id_producto) in known_labels else -1
 
         if id_prod_encoded == -1:
@@ -137,12 +165,11 @@ def make_single_prediction(id_producto, fecha_str):
 # --- Bloque de prueba (Opcional) ---
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-    tf.get_logger().setLevel('ERROR')
+    # (La carga inicial de artefactos ya se habrá ejecutado al importar)
 
     # Probamos con un ID de producto que SÍ debería existir si los datos son los mismos
-    id_prueba_1 = "FIL-A-001" # Ajusta si tu encoder tiene otros productos
-    fecha_prueba = "2024-11-20" # Una fecha futura razonable
+    id_prueba_1 = "SKU-2021-00010-3398" # Ajusta si tu encoder tiene otros productos
+    fecha_prueba = "2025-11-20" # Una fecha futura razonable
 
     prediccion = make_single_prediction(id_prueba_1, fecha_prueba)
     if prediccion is not None:
@@ -161,3 +188,4 @@ if __name__ == "__main__":
         print("Prueba exitosa: El producto no se encontró, como se esperaba.")
     else:
         print(f"Error en la prueba: Se obtuvo una predicción ({prediccion_nueva}) para un producto desconocido.")
+

@@ -43,8 +43,7 @@ st.divider()
 st.header("Guía de Uso del Sistema")
 st.markdown("Siga estos pasos para utilizar la aplicación:")
 
-# (El resto del contenido se mantiene igual, ya que es neutral)
-
+# (Paso 1 no se modifica)
 with st.container(border=True):
     st.subheader("📄 Paso 1: Carga de Datos")
     st.markdown("""
@@ -56,22 +55,24 @@ with st.container(border=True):
 
 st.write("") # Añadir un espacio
 
+# --- INICIO DE LA MODIFICACIÓN ---
+# Paso 2 (Actualizado para redirigir a la nueva página de admin)
 with st.container(border=True):
-    st.subheader("🤖 Paso 2: Entrenamiento del Modelo")
+    st.subheader("🤖 Paso 2: Administración y Entrenamiento")
     st.markdown("""
-    Este paso se realiza **fuera de esta aplicación web** (en el terminal del servidor) y debe ser ejecutado por un administrador técnico.
+    Navegue a la página **'3_Administracion'** en la barra lateral. 
+    
+    Desde esta sección segura, un administrador puede iniciar el proceso de **re-entrenamiento del modelo**. El sistema utilizará todos los datos cargados hasta la fecha para generar y activar los nuevos modelos de predicción.
     """)
-    st.info("""
-    **Instrucción para el Administrador:**
-    Después de cargar nuevos datos en el Paso 1, debe detener el servidor backend y ejecutar el siguiente comando en la terminal para re-entrenar los modelos:
-    ```bash
-    python -m backend.ml_core.training
-    ```
-    Una vez completado, reinicie el servidor backend (`python -m backend.app`) para que las nuevas predicciones reflejen la información actualizada.
+    st.warning("""
+    **Advertencia:** Esta acción solo debe ser ejecutada por personal autorizado. 
+    El re-entrenamiento puede tardar varios minutos y reemplazará los modelos de predicción actuales en vivo.
     """)
+# --- FIN DE LA MODIFICACIÓN ---
 
 st.write("") # Añadir un espacio
 
+# (Paso 3 no se modifica)
 with st.container(border=True):
     st.subheader("📈 Paso 3: Visualización de Predicción")
     st.markdown("""
@@ -79,4 +80,3 @@ with st.container(border=True):
     
     Ingrese un **SKU (ID de Producto)** y una **fecha futura** para generar un pronóstico de demanda en unidades. Podrá ver la predicción junto al historial de ventas de ese producto.
     """)
-
