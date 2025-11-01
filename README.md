@@ -129,7 +129,7 @@ You need two separate terminals, both with the virtual environment activated (`s
     *(The backend typically runs on `http://127.0.0.1:5000`)*
 2.  **Start the Frontend (Streamlit UI):**
     ```bash
-    streamlit run frontend/Home.py
+    streamlit run frontend/app.py
     ```
     *(Streamlit will provide a URL, usually `http://localhost:8501`)*
 
