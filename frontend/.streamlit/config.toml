@@ -1,0 +1,24 @@
+# --- Configuración del Tema Global de Streamlit (Fase 1) ---
+# Este archivo define la apariencia visual de la aplicación.
+# Streamlit lo detecta automáticamente al reiniciar.
+
+[theme]
+# Color primario (botones, sliders, elementos interactivos)
+# Usaremos un azul corporativo y profesional.
+primaryColor="#004A99"
+
+# Color de fondo principal de la aplicación
+# Usaremos un gris muy claro para un aspecto limpio y moderno.
+backgroundColor="#F5F5F5"
+
+# Color de fondo secundario (barra lateral, contenedores)
+# Un blanco para contrastar con el fondo gris.
+secondaryBackgroundColor="#FFFFFF"
+
+# Color del texto principal
+# Un gris oscuro en lugar de negro puro, es más suave a la vista.
+textColor="#31333F"
+
+# Fuente a usar en toda la aplicación
+# "sans serif" es moderna y la más legible en pantallas.
+font="sans serif"
