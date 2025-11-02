@@ -47,7 +47,7 @@ st.markdown("Siga estos pasos para utilizar la aplicación:")
 with st.container(border=True):
     st.subheader("📄 Paso 1: Carga de Datos")
     st.markdown("""
-    Navegue a la página **'1_Carga_de_Datos'** en la barra lateral. 
+    Navegue a la página **'Carga_de_Datos'** en la barra lateral. 
     
     Aquí podrá subir los archivos Excel transaccionales (ej. `Factura_Importacion_PLUS_*.xlsx`). El sistema leerá automáticamente la hoja **'Detalle'** y guardará los datos históricos en la base de datos.
     """)
@@ -60,7 +60,7 @@ st.write("") # Añadir un espacio
 with st.container(border=True):
     st.subheader("🤖 Paso 2: Administración y Entrenamiento")
     st.markdown("""
-    Navegue a la página **'3_Administracion'** en la barra lateral. 
+    Navegue a la página **'Administracion'** en la barra lateral. 
     
     Desde esta sección segura, un administrador puede iniciar el proceso de **re-entrenamiento del modelo**. El sistema utilizará todos los datos cargados hasta la fecha para generar y activar los nuevos modelos de predicción.
     """)
@@ -76,7 +76,7 @@ st.write("") # Añadir un espacio
 with st.container(border=True):
     st.subheader("📈 Paso 3: Visualización de Predicción")
     st.markdown("""
-    Navegue a la página **'2_Visualizacion_de_Prediccion'** en la barra lateral.
+    Navegue a la página **'Visualizacion_de_Prediccion'** en la barra lateral.
     
     Ingrese un **SKU (ID de Producto)** y una **fecha futura** para generar un pronóstico de demanda en unidades. Podrá ver la predicción junto al historial de ventas de ese producto.
     """)
