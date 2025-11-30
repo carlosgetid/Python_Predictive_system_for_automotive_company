@@ -63,7 +63,7 @@ The software implements an end-to-end ML pipeline:
 │   ├── pages/
 │   │   ├── 1_Carga_de_Datos.py # Streamlit page for data upload
 │   │   └── 2_Visualizacion_de_Prediccion.py # Streamlit page for prediction request/display
-│   └── Home.py             # Streamlit main/home page (if any)
+│   └── Inicio.py           # Streamlit main/home page
 ├── models/                 # Stores saved ML artifacts (.joblib, .keras) - Gitignored recommended
 ├── docs/
 │   └── Explicacion_Prediccion_MVP.md # Detailed explanation of the prediction flow
@@ -82,7 +82,7 @@ The software implements an end-to-end ML pipeline:
     ```
 2.  **Create and Activate Virtual Environment:**
     ```bash
-    python -m venv venv
+    python3 -m venv venv
     source venv/bin/activate  # On Windows use `venv\Scripts\activate`
     ```
 3.  **Install Dependencies:**
@@ -129,7 +129,7 @@ You need two separate terminals, both with the virtual environment activated (`s
     *(The backend typically runs on `http://127.0.0.1:5000`)*
 2.  **Start the Frontend (Streamlit UI):**
     ```bash
-    streamlit run frontend/app.py
+    streamlit run frontend/Inicio.py
     ```
     *(Streamlit will provide a URL, usually `http://localhost:8501`)*
 
