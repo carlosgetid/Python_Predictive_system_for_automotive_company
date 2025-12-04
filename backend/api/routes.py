@@ -1,30 +1,43 @@
 import logging
 import pandas as pd
+import shutil  # <--- AGREGAR ESTA LÍNEA
 from flask import Blueprint, request, jsonify
 import datetime 
-import os # Importar os para la lógica de lectura de Excel
+import os 
 
-# Importar lógica (asegúrate que las rutas relativas sean correctas)
+# Importar lógica BD
 from backend.database.db_utils import get_db_engine, save_dataframe_to_db
 
-# --- INICIO DE MODIFICACIÓN (Importar predict y training) ---
-# Importamos la lógica de predicción (que carga los modelos al inicio)
+# --- INICIO DE AGREGADO ---
+# Importamos el Servicio de Ingesta (HU-010)
+from backend.services.ingestion_service import ingest_dataframe_to_db, process_excel_file_from_disk
+# --- FIN DE AGREGADO ---
+
+# Importamos la lógica de predicción...
 import backend.ml_core.predict as predictor
-# Importamos la lógica de entrenamiento como un módulo
 import backend.ml_core.training as training_pipeline
-# --- FIN DE MODIFICACIÓN ---
 
 
 # Blueprint
 api_bp = Blueprint('api', __name__)
 
-# --- Endpoint /upload (Mejorado para leer hoja 'Detalle') ---
+# --- INICIO DE AGREGADO: Configuración Ingesta Automática ---
+BASE_DATA_DIR = "data_fuente"
+INGEST_DIR = os.path.join(BASE_DATA_DIR, "entrada")
+PROCESSED_DIR = os.path.join(BASE_DATA_DIR, "procesados")
+FAILED_DIR = os.path.join(BASE_DATA_DIR, "fallidos")
+
+# Asegurar existencia de directorios
+for d in [INGEST_DIR, PROCESSED_DIR, FAILED_DIR]:
+    os.makedirs(d, exist_ok=True)
+# --- FIN DE AGREGADO ---
+
+# --- Endpoint /upload (Refactorizado para usar Servicio Centralizado) ---
 @api_bp.route('/upload', methods=['POST'])
 def upload_file():
     """
-    Recibe CSV/Excel. Si es Excel, lee la hoja 'Detalle'.
-    Extrae SKU, Fecha Venta, Cantidad -> id_producto, fecha, cantidad_vendida.
-    Valida y guarda en 'ventas_historicas'.
+    Recibe CSV/Excel. Lee el archivo (mantiene lógica de lectura existente).
+    Delega la Validación, Limpieza y Guardado al servicio 'ingest_dataframe_to_db'.
     """
     try:
         if 'file' not in request.files:
@@ -32,43 +45,26 @@ def upload_file():
             return jsonify({"error": "No se encontró el archivo"}), 400
 
         file = request.files['file']
-        df = None
-        required_cols_raw = set() # Inicializar
-        rename_map = {} # Inicializar
+        if file.filename == '':
+             return jsonify({"error": "Nombre de archivo vacío"}), 400
 
-        # --- Lectura y Validación de Formato ---
+        df = None
+        
+        # --- BLOQUE 1: Lectura (MANTENIENDO TU LÓGICA DE LECTURA ROBUSTA) ---
         try:
             if file.filename.endswith('.csv'):
-                # Si es CSV, asumimos que ya tiene las columnas correctas
                 df = pd.read_csv(file)
-                # Nombres esperados para CSV pre-procesado
-                required_cols_raw = {'id_producto', 'fecha', 'cantidad_vendida'}
-                rename_map = {} # No necesita renombrar
-
             elif file.filename.endswith(('.xls', '.xlsx')):
-                # Si es Excel, leer la hoja 'Detalle'
-                # Asegúrate que 'openpyxl' esté en requirements.txt
                 try:
+                    # Mantenemos tu validación específica de hoja 'Detalle'
                     df = pd.read_excel(file, sheet_name='Detalle', engine='openpyxl')
                     logging.info(f"Leída hoja 'Detalle' del archivo Excel '{file.filename}'.")
                 except ValueError as sheet_error:
-                    # Captura error si la hoja 'Detalle' no se encuentra
                     logging.error(f"Error al leer hoja 'Detalle' de '{file.filename}': {sheet_error}")
                     return jsonify({"error": "El archivo Excel no contiene una hoja llamada 'Detalle'."}), 400
                 except Exception as excel_read_error:
-                     # Captura otros errores de lectura de Excel (ej. archivo corrupto)
                     logging.error(f"Error general al leer Excel '{file.filename}': {excel_read_error}", exc_info=True)
                     return jsonify({"error": f"Error al leer el archivo Excel: {excel_read_error}"}), 400
-
-                # Nombres esperados en la hoja 'Detalle'
-                required_cols_raw = {'SKU', 'Fecha Venta', 'Cantidad'}
-                # Mapa para renombrar las columnas
-                rename_map = {
-                    'SKU': 'id_producto',
-                    'Fecha Venta': 'fecha',
-                    'Cantidad': 'cantidad_vendida'
-                }
-
             else:
                 return jsonify({"error": "Formato de archivo no soportado (solo .csv, .xls, .xlsx)"}), 400
 
@@ -76,7 +72,7 @@ def upload_file():
             logging.error(f"Error al intentar leer el archivo '{file.filename}': {e}", exc_info=True)
             return jsonify({"error": f"Error general al leer el archivo: {e}"}), 400
 
-        # Verificar si la lectura fue exitosa
+        # Verificar si la lectura fue exitosa (Tu lógica original)
         if df is None:
              logging.error("DataFrame quedó como None después de intentar leer el archivo.")
              return jsonify({"error": "No se pudo leer el archivo correctamente."}), 400
@@ -84,76 +80,81 @@ def upload_file():
              logging.warning(f"El archivo '{file.filename}' (o la hoja 'Detalle') está vacío.")
              return jsonify({"error": "El archivo o la hoja 'Detalle' está vacía."}), 400
 
-
-        # --- Validación de Columnas (Adaptada) ---
-        actual_cols = set(df.columns)
-        if not required_cols_raw.issubset(actual_cols):
-            missing = required_cols_raw - actual_cols
-            expected_str = "'SKU', 'Fecha Venta', 'Cantidad'" if rename_map else "'id_producto', 'fecha', 'cantidad_vendida'"
-            logging.warning(f"Archivo '{file.filename}' rechazado. Faltan columnas {expected_str}: {missing}")
-            return jsonify({"error": f"Faltan columnas obligatorias ({expected_str}): {missing}"}), 400
-
-        # --- Selección y Renombrado ---
-        logging.info(f"Columnas encontradas: {list(actual_cols)}. Columnas requeridas: {list(required_cols_raw)}")
-        # Seleccionar solo las columnas necesarias ANTES de renombrar
-        df_selected = df[list(required_cols_raw)].copy()
-        # Renombrar si es necesario (si era Excel)
-        if rename_map:
-            df_selected.rename(columns=rename_map, inplace=True)
-            logging.info(f"Columnas renombradas a: {list(df_selected.columns)}")
-
-        df_to_save = df_selected
-
-        # --- Limpieza y Formateo (Misma lógica de antes) ---
-        logging.info("Iniciando limpieza y formateo de datos...")
-        try:
-            df_to_save['fecha'] = pd.to_datetime(df_to_save['fecha'], errors='coerce')
-            rows_before = len(df_to_save)
-            df_to_save.dropna(subset=['fecha'], inplace=True)
-            dropped_rows = rows_before - len(df_to_save)
-            if dropped_rows > 0:
-                logging.warning(f"Se eliminaron {dropped_rows} filas por formato de fecha inválido.")
-
-            df_to_save['cantidad_vendida'] = pd.to_numeric(df_to_save['cantidad_vendida'], errors='coerce')
-            df_to_save.dropna(subset=['cantidad_vendida'], inplace=True) # Eliminar nulos de cantidad
-            df_to_save['cantidad_vendida'] = df_to_save['cantidad_vendida'].astype(int)
-            df_to_save = df_to_save[df_to_save['cantidad_vendida'] > 0] # Mantener solo > 0
-            df_to_save['id_producto'] = df_to_save['id_producto'].astype(str)
-
-        except Exception as e:
-             logging.error(f"Error inesperado durante la limpieza de datos: {e}", exc_info=True)
-             return jsonify({"error": f"Error procesando los datos extraídos: {e}"}), 400
-
-        if df_to_save.empty:
-            logging.warning("No quedan datos válidos después de la limpieza completa (ej. fechas inválidas o cantidad <= 0).")
-            return jsonify({"error": "No se encontraron datos válidos (SKU, Fecha Venta válida, Cantidad > 0) en el archivo/hoja."}), 400
+        # --- BLOQUE 2: Procesamiento y Guardado (REFACTORIZADO) ---
+        # AQUI ESTA EL CAMBIO: En lugar de tener 50 líneas para limpiar y guardar,
+        # llamamos a esta función que hace validación, limpieza Y GUARDADO (save_dataframe_to_db) internamente.
         
-        logging.info(f"Limpieza completada. {len(df_to_save)} filas válidas listas para guardar.")
-
-        # --- Guardado en BD ---
-        engine = get_db_engine()
-        if engine is None:
-            logging.error("Fallo al obtener conexión a BD en /upload.")
-            return jsonify({"error": "Error interno del servidor (BD)"}), 500
-
-        success, message = save_dataframe_to_db(df_to_save, "ventas_historicas", engine)
+        success, message, rows_saved = ingest_dataframe_to_db(df, f"Manual_{file.filename}")
 
         if success:
             summary = {
                 "archivo_recibido": file.filename,
-                "filas_leidas_hoja_detalle_o_csv": len(df),
-                "filas_validas_guardadas": len(df_to_save)
+                "filas_leidas_originales": len(df),
+                "filas_validas_guardadas": rows_saved
             }
             logging.info(f"Datos guardados con éxito. Resumen: {summary}")
             return jsonify({"message": message, "data_summary": summary}), 201
         else:
-            logging.error(f"Fallo al guardar en BD: {message}")
-            return jsonify({"error": message}), 500
+            # El servicio devuelve el mensaje de error específico (ej. "Fallo al guardar en BD")
+            logging.error(f"Fallo en el procesamiento del servicio: {message}")
+            return jsonify({"error": message}), 400
 
     except Exception as e:
-        logging.error(f"[ERROR /upload Mejorado - General] {e}", exc_info=True)
+        logging.error(f"[ERROR CRITICO /upload] {e}", exc_info=True)
         return jsonify({"error": f"Ocurrió un error interno inesperado en el servidor: {e}"}), 500
 
+# --- INICIO DE AGREGADO: Endpoint Ingesta Automatizada HU-010 ---
+@api_bp.route('/api/v1/trigger_ingestion', methods=['POST'])
+def trigger_ingestion():
+    """
+    HU-010: Disparador de ingesta batch desde disco.
+    Escanea '/data_fuente/entrada', procesa archivos y los mueve.
+    """
+    logging.info("--- Iniciando ciclo de Ingesta Automatizada ---")
+    report = {"processed": [], "failed": [], "total_found": 0}
+
+    try:
+        # 1. Escaneo
+        if not os.path.exists(INGEST_DIR):
+             return jsonify({"error": f"Directorio no encontrado: {INGEST_DIR}"}), 500
+             
+        files = [f for f in os.listdir(INGEST_DIR) if f.endswith(('.xlsx', '.xls'))]
+        report["total_found"] = len(files)
+
+        if not files:
+            return jsonify({"message": "No hay archivos pendientes.", "report": report}), 200
+
+        # 2. Procesamiento Batch
+        for filename in files:
+            src_path = os.path.join(INGEST_DIR, filename)
+            
+            # Llamada al servicio específico para archivos en disco
+            success = process_excel_file_from_disk(src_path)
+
+            # 3. Gestión de Archivos (Mover a procesados/fallidos)
+            try:
+                if success:
+                    dst_path = os.path.join(PROCESSED_DIR, filename)
+                    shutil.move(src_path, dst_path)
+                    report["processed"].append(filename)
+                    logging.info(f"ARCHIVO PROCESADO: {filename}")
+                else:
+                    dst_path = os.path.join(FAILED_DIR, filename)
+                    shutil.move(src_path, dst_path)
+                    report["failed"].append(filename)
+                    logging.warning(f"ARCHIVO FALLIDO: {filename}")
+            except OSError as io_err:
+                logging.error(f"Error de sistema moviendo archivo {filename}: {io_err}")
+                report["failed"].append(f"{filename} (Error IO)")
+
+        # Respuesta Parcial (207) o Exitosa (200)
+        status_code = 200 if not report["failed"] else 207
+        return jsonify({"message": "Ciclo de ingesta finalizado.", "report": report}), status_code
+
+    except Exception as e:
+        logging.error(f"Error crítico en trigger_ingestion: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+# --- FIN DE AGREGADO ---
 
 # --- Endpoint /predict (ACTUALIZADO para usar el predictor importado) ---
 @api_bp.route('/predict', methods=['POST'])
