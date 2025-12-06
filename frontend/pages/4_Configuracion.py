@@ -18,10 +18,16 @@ except ImportError as e:
 # Configuración básica de logging
 logging.basicConfig(level=logging.INFO)
 
-# --- PROTECCIÓN DE PÁGINA (Login Required) ---
+# --- PROTECCIÓN DE PÁGINA (Login Required + RBAC) ---
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
     st.stop()
+
+# Validación de Rol: Bloquear acceso a "Vendedora"
+if st.session_state.user['rol'] == 'Vendedora':
+    st.error("⛔ Acceso Restringido: Su perfil no tiene permisos de configuración.")
+    st.stop()
+# ----------------------------------------------------
 
 st.title("⚙️ Configuración del Sistema")
 st.markdown("Panel de control para ajustar el comportamiento de la interfaz de usuario y funcionalidades del sistema.")

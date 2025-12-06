@@ -13,13 +13,14 @@ sys.path.append(str(root_path))
 
 # --- IMPORTACIÓN DE CONFIGURACIÓN ---
 try:
-    from frontend.config import URL_LOGIN, HIDE_SIDEBAR_CSS # --- NUEVO: Importar CSS
+    from frontend.config import URL_LOGIN, HIDE_SIDEBAR_CSS, get_role_based_sidebar_css
 except ImportError:
     # Fallback por si falla la importación
     BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
     BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
     URL_LOGIN = f"http://{BACKEND_HOST}:{BACKEND_PORT}/login"
-    HIDE_SIDEBAR_CSS = "" # Fallback vacío
+    HIDE_SIDEBAR_CSS = ""
+    def get_role_based_sidebar_css(role): return ""
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 # Debe ser la primera instrucción de Streamlit
@@ -84,10 +85,13 @@ def login_screen():
 
 # --- FUNCIÓN DE DASHBOARD (App Principal) ---
 def dashboard_screen():
+    # --- RBAC VISUAL: Ocultar pestañas no permitidas ---
+    role_css = get_role_based_sidebar_css(st.session_state.user['rol'])
+    st.markdown(role_css, unsafe_allow_html=True)
+    # ---------------------------------------------------
+
     # Cambiar layout visualmente (hack)
-    # Nota: st.set_page_config solo se puede llamar una vez, por eso manejamos el contenido.
-    
-    # Sidebar con Info del Usuario
+    # ... resto del código ...
     with st.sidebar:
         st.title(f"👤 {st.session_state.user['nombre']}")
         st.caption(f"Rol: **{st.session_state.user['rol']}**")

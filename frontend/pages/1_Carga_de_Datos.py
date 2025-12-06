@@ -10,12 +10,16 @@ from io import BytesIO
 from frontend.config import get_setting # Para leer el archivo en memoria para la vista previa
 
 
-# --- PROTECCIÓN DE PÁGINA (Login Required) ---
-# Si el usuario no está autenticado, mostramos error y detenemos la ejecución.
+# --- PROTECCIÓN DE PÁGINA (Login Required + RBAC) ---
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
-    st.stop() # ¡Importante! Esto evita que se cargue el resto de la página
-# ---------------------------------------------
+    st.stop()
+
+# Validación de Rol: Bloquear acceso a "Vendedora" (Ana)
+if st.session_state.user['rol'] == 'Vendedora':
+    st.error("⛔ Acceso Restringido: Su perfil no tiene permisos para cargar datos.")
+    st.stop()
+# ----------------------------------------------------
 
 # --- LEER CONFIGURACIÓN DINÁMICA ---
 # Leemos el estado actual desde el JSON cada vez que se carga la página

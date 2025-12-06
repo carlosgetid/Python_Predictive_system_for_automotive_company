@@ -13,7 +13,7 @@ sys.path.append(str(root_path))
 
 # --- IMPORTACIÓN DE CONFIGURACIÓN ---
 try:
-    from frontend.config import URL_PREDICT, BASE_URL
+    from frontend.config import URL_PREDICT, BASE_URL, get_role_based_sidebar_css
     # Construimos URL_HISTORY usando la base importada
     URL_HISTORY = f"{BASE_URL}/history"
 except ImportError:
@@ -31,6 +31,12 @@ logging.basicConfig(level=logging.INFO)
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
     st.stop()
+
+# --- RBAC VISUAL: Ocultar pestañas no permitidas ---
+# Esto asegura que Ana no vea enlaces a Admin/Carga mientras está aquí
+role_css = get_role_based_sidebar_css(st.session_state.user['rol'])
+st.markdown(role_css, unsafe_allow_html=True)
+# ---------------------------------------------------
 
 st.title("📈 Visualización de Predicción de Demanda")
 

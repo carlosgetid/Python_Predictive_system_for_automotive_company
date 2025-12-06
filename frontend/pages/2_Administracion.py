@@ -24,11 +24,16 @@ except ImportError:
     URL_RETRAIN = f"{BASE_URL}/api/v1/trigger_retraining"
     URL_METRICS = f"{BASE_URL}/api/v1/metrics"
 
-# --- PROTECCIÓN DE PÁGINA (Login Required) ---
+# --- PROTECCIÓN DE PÁGINA (Login Required + RBAC) ---
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
     st.stop()
-# ---------------------------------------------
+
+# Validación de Rol: Bloquear acceso a "Vendedora"
+if st.session_state.user['rol'] == 'Vendedora':
+    st.error("⛔ Acceso Restringido: Su perfil no tiene permisos de administración.")
+    st.stop()
+# ----------------------------------------------------
 
 st.title("Panel de Administración 🛡️")
 st.markdown("""

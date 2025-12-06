@@ -79,3 +79,27 @@ HIDE_SIDEBAR_CSS = """
     }
 </style>
 """
+
+# --- CSS Dinámico por Rol (RBAC Visual) ---
+def get_role_based_sidebar_css(role):
+    """
+    Genera CSS para ocultar pestañas de navegación según el perfil del usuario.
+    Se basa en selectores de atributos href que coincidan con los nombres de archivo.
+    """
+    if role == "Vendedora":
+        # Ana (Vendedora) solo debe ver "Visualizacion_de_Prediccion".
+        # Ocultamos explícitamente las otras 3 páginas.
+        return """
+        <style>
+            /* Ocultar enlace a Carga de Datos */
+            [data-testid="stSidebarNav"] a[href*="Carga_de_Datos"] { display: none !important; }
+            
+            /* Ocultar enlace a Administración */
+            [data-testid="stSidebarNav"] a[href*="Administracion"] { display: none !important; }
+            
+            /* Ocultar enlace a Configuración */
+            [data-testid="stSidebarNav"] a[href*="Configuracion"] { display: none !important; }
+        </style>
+        """
+    # Si es otro rol (Administrador, Logística, etc.), no ocultamos nada (retorna string vacío)
+    return ""
