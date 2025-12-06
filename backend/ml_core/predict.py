@@ -4,15 +4,16 @@ import pandas as pd
 import numpy as np
 import logging
 from tensorflow.keras.models import load_model
-from datetime import datetime
-import tensorflow as tf # Importar tf
+import tensorflow as tf
+import xgboost as xgb # --- NUEVO: Importar XGBoost
 
-# --- 1. Constantes y Carga de Artefactos (MVP) ---
+# --- 1. Constantes y Carga de Artefactos ---
 
 MODELS_DIR = "models"
 ENCODER_PATH = os.path.join(MODELS_DIR, "label_encoder_producto.joblib")
 SCALER_PATH = os.path.join(MODELS_DIR, "min_max_scaler.joblib")
-MODEL_PATH = os.path.join(MODELS_DIR, "mlp_model.keras") 
+MLP_MODEL_PATH = os.path.join(MODELS_DIR, "mlp_model.keras") 
+XGB_MODEL_PATH = os.path.join(MODELS_DIR, "xgboost_model.joblib") # --- NUEVO: Ruta XGBoost
 
 # --- INICIO DE LA MODIFICACIÓN (RECARGA EN VIVO) ---
 
@@ -44,15 +45,22 @@ def load_artifacts_into_memory():
             raise FileNotFoundError(f"No se encontró el scaler en {SCALER_PATH}")
         artifacts_temp['scaler'] = joblib.load(SCALER_PATH)
 
-        if not os.path.exists(MODEL_PATH):
-            raise FileNotFoundError(f"No se encontró el modelo MLP en {MODEL_PATH}")
-        # Cargar el modelo. Es importante limpiar sesiones anteriores si Keras se queja.
-        tf.keras.backend.clear_session()
-        artifacts_temp['model'] = load_model(MODEL_PATH)
+        # --- INICIO AGREGADO XGBOOST ---
+        if not os.path.exists(XGB_MODEL_PATH):
+             # Advertencia no crítica si falta uno, pero idealmente deberían estar ambos
+             logging.warning(f"No se encontró modelo XGBoost en {XGB_MODEL_PATH}")
+        else:
+             artifacts_temp['xgboost'] = joblib.load(XGB_MODEL_PATH)
+        # --- FIN AGREGADO XGBOOST ---
 
-        logging.info("Artefactos de ML (MVP: encoder, scaler, model MLP) cargados/recargados con éxito.")
+        if not os.path.exists(MLP_MODEL_PATH):
+            raise FileNotFoundError(f"No se encontró el modelo MLP en {MLP_MODEL_PATH}")
         
-        # Actualizar la caché global de forma atómica
+        tf.keras.backend.clear_session()
+        artifacts_temp['mlp'] = load_model(MLP_MODEL_PATH) # Cambié la clave a 'mlp' para ser específico
+
+        logging.info("Artefactos de ML (Encoder, Scaler, MLP, XGBoost) cargados/recargados con éxito.")
+        
         artifacts_cache = artifacts_temp
         return True
 
@@ -95,59 +103,91 @@ def make_single_prediction(id_producto, fecha_str):
     # Obtener artefactos de la caché global
     encoder = artifacts_cache.get('encoder')
     scaler = artifacts_cache.get('scaler')
-    model = artifacts_cache.get('model')
+    # --- CAMBIO: Obtener los modelos específicos ---
+    model_mlp = artifacts_cache.get('mlp')
+    model_xgb = artifacts_cache.get('xgboost')
 
-    if not all([encoder, scaler, model]):
-         logging.error("Uno o más artefactos (encoder, scaler, model) faltan en la caché. Abortando predicción.")
+    # Validar que existan los transformadores y al menos un modelo
+    if not encoder or not scaler:
+         logging.error("Faltan artefactos esenciales (encoder o scaler) en la caché. Abortando predicción.")
+         return None
+         
+    if not model_mlp and not model_xgb:
+         logging.error("No hay ningún modelo (MLP o XGBoost) cargado en la caché. Abortando predicción.")
          return None
 
 
     try:
-        # --- Paso A: Replicar Ingeniería de Características (MVP) ---
+        # --- Paso A: Ingeniería de Características ---
         try:
             fecha = pd.to_datetime(fecha_str)
         except ValueError:
             logging.error(f"Formato de fecha inválido: {fecha_str}. Use YYYY-MM-DD.")
-            return None # Error si la fecha no es válida
+            return None
 
-        data = {
-            'id_producto': [str(id_producto)], # Asegurar que sea string
-            'mes': [fecha.month],
-            'dia_del_mes': [fecha.day],
-            'dia_de_la_semana': [fecha.dayofweek],
-            'anio': [fecha.year]
-        }
-
-        # Orden exacto esperado por el scaler del MVP
-        column_order = ['id_producto', 'mes', 'dia_del_mes', 'dia_de_la_semana', 'anio']
-        df_pred = pd.DataFrame(data, columns=column_order)
-
-        # --- Paso B: Replicar Codificación (MVP con manejo de desconocidos) ---
+        # --- Paso B: Codificación (Primero obtenemos el valor) ---
         known_labels = set(encoder.classes_)
-        # Aplicar transformación, asignar -1 a desconocidos (LabelEncoder no maneja desconocidos nativamente)
+        # Si el producto no existe en el encoder, devolvemos -1
         id_prod_encoded = encoder.transform([str(id_producto)])[0] if str(id_producto) in known_labels else -1
 
         if id_prod_encoded == -1:
-            logging.warning(f"ID de producto desconocido: {id_producto}. No se puede realizar la predicción.")
-            return None # Devolvemos None si el producto no se vio en entrenamiento
+            logging.warning(f"ID de producto desconocido: {id_producto}. No se puede predecir.")
+            return None 
 
-        df_pred['id_producto'] = id_prod_encoded # Reemplazar string con el código numérico
+        # --- Paso C: Construcción del DataFrame (CORRECCIÓN DE NOMBRES HU-006) ---
+        # Los nombres deben coincidir EXACTAMENTE con los usados en training.py:
+        # ['id_producto_encoded', 'mes', 'anio', 'dia_semana', 'dia']
+        
+        data = {
+            'id_producto_encoded': [id_prod_encoded],
+            'mes': [fecha.month],
+            'anio': [fecha.year],
+            'dia_semana': [fecha.dayofweek],  # Antes: dia_de_la_semana
+            'dia': [fecha.day]                # Antes: dia_del_mes
+        }
 
-        # --- Paso C: Replicar Escalado (MVP) ---
-        # Asegurarse que todas las columnas son numéricas antes de escalar
-        for col in column_order:
-             df_pred[col] = pd.to_numeric(df_pred[col], errors='coerce')
+        # Orden explícito igual al del entrenamiento
+        column_order = ['id_producto_encoded', 'mes', 'anio', 'dia_semana', 'dia']
+        
+        df_pred = pd.DataFrame(data, columns=column_order)
 
-        if df_pred.isnull().values.any():
-             logging.error("Valores no numéricos encontrados antes de escalar.")
-             return None # Error si hay nulos después de convertir a numérico
+        # --- Paso D: Escalado ---
+        # Ahora los nombres coinciden, el scaler funcionará
+        df_scaled = scaler.transform(df_pred)
 
-        # Aplicar el escalado aprendido
-        df_scaled = scaler.transform(df_pred) # Scaler espera todas las 5 columnas numéricas
+        # --- Paso D: Realizar la Predicción Híbrida (XGBoost + MLP) ---
+        
+        # 1. Obtener modelos de la caché
+        model_mlp = artifacts_cache.get('mlp')
+        model_xgb = artifacts_cache.get('xgboost')
+        
+        # --- Paso D: Realizar la Predicción Híbrida (XGBoost + MLP) ---
+        preds = []
+        
+        # 1. Predicción MLP
+        if model_mlp:
+            try:
+                # Keras/MLP devuelve una matriz [[valor]], extraemos el float
+                pred_mlp = model_mlp.predict(df_scaled, verbose=0)[0][0]
+                preds.append(pred_mlp)
+            except Exception as e:
+                logging.error(f"Error prediciendo con MLP: {e}")
 
-        # --- Paso D: Realizar la Predicción con MLP ---
-        prediction_raw = model.predict(df_scaled)
-        prediction_value = prediction_raw[0][0]
+        # 2. Predicción XGBoost
+        if model_xgb:
+            try:
+                # XGBoost devuelve un array [valor], extraemos el float
+                pred_xgb = model_xgb.predict(df_scaled)[0]
+                preds.append(pred_xgb)
+            except Exception as e:
+                logging.error(f"Error prediciendo con XGBoost: {e}")
+            
+        if not preds:
+            logging.error("Falló la predicción: no se pudo obtener resultado de ningún modelo.")
+            return None
+
+        # 3. Promedio (Ensamble)
+        prediction_value = sum(preds) / len(preds)
 
         # La predicción de cantidad no puede ser negativa
         prediction_value = max(0, prediction_value)
@@ -155,7 +195,7 @@ def make_single_prediction(id_producto, fecha_str):
         # Redondear hacia ARRIBA (techo) para ser conservador con el inventario
         prediction_final = int(np.ceil(prediction_value))
 
-        logging.info(f"Predicción (MVP) generada para {id_producto} en {fecha_str}: {prediction_final} unidades")
+        logging.info(f"Predicción Híbrida para {id_producto} en {fecha_str}: {prediction_final} unidades")
         return prediction_final
 
     except Exception as e:

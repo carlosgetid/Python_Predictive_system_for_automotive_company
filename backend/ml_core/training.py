@@ -13,15 +13,67 @@ from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.optimizers import Adam
 # Importar EarlyStopping para un mejor entrenamiento
 from tensorflow.keras.callbacks import EarlyStopping
-
-# --- Importar nuestro preprocesador (Revertido a MVP) ---
-from backend.ml_core.preprocessing import get_and_preprocess_data
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+from backend.database.db_utils import get_db_engine
+import json # Útil para logs estructurados
 
 # --- Constantes (Revertidas a MVP) ---
 MODELS_DIR = "models"
 # Nombres originales de los modelos
 XGB_MODEL_PATH = os.path.join(MODELS_DIR, "xgboost_model.joblib")
 MLP_MODEL_PATH = os.path.join(MODELS_DIR, "mlp_model.keras")
+SCALER_PATH = os.path.join(MODELS_DIR, "min_max_scaler.joblib")
+ENCODER_PATH = os.path.join(MODELS_DIR, "label_encoder_producto.joblib")
+
+def load_data_from_db():
+    """Carga datos frescos desde la BD para re-entrenamiento (HU-006)."""
+    engine = get_db_engine()
+    if not engine:
+        logging.error("No se pudo conectar a la BD.")
+        return pd.DataFrame()
+
+    # Consulta optimizada: solo columnas necesarias
+    query = "SELECT id_producto, fecha, cantidad_vendida FROM ventas_historicas ORDER BY fecha ASC"
+    try:
+        df = pd.read_sql(query, engine)
+        logging.info(f"Datos cargados de BD: {len(df)} registros.")
+        return df
+    except Exception as e:
+        logging.error(f"Error SQL al cargar datos: {e}")
+        return pd.DataFrame()
+
+def preprocess_for_training(df):
+    """
+    Preprocesa datos y devuelve splits + artefactos (scaler, encoder) para guardar.
+    Reemplaza la lógica estática anterior.
+    """
+    df['fecha'] = pd.to_datetime(df['fecha'])
+
+    # Feature Engineering (Igual que en MVP)
+    df['mes'] = df['fecha'].dt.month
+    df['anio'] = df['fecha'].dt.year
+    df['dia_semana'] = df['fecha'].dt.dayofweek
+    df['dia'] = df['fecha'].dt.day
+
+    # 1. Encoding (Creamos y ajustamos el encoder aquí)
+    le = LabelEncoder()
+    df['id_producto_encoded'] = le.fit_transform(df['id_producto'].astype(str))
+
+    features = ['id_producto_encoded', 'mes', 'anio', 'dia_semana', 'dia']
+    target = 'cantidad_vendida'
+
+    X = df[features]
+    y = df[target]
+
+    # 2. Scaling (Creamos y ajustamos el scaler aquí)
+    scaler = MinMaxScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # Split
+    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+
+    return X_train, X_test, y_train, y_test, le, scaler
 
 # --- Tarea HU-002.T3: Lógica de Evaluación (Modificada) ---
 def evaluate_model(y_true, y_pred, model_name):
@@ -135,17 +187,19 @@ def train_and_evaluate():
     # --- CAMBIO: Usar logging en lugar de print ---
     logging.info("--- INICIANDO PIPELINE DE ENTRENAMIENTO (lógica MVP) ---")
 
-    # 1. Cargar y preprocesar datos
-    data_split = get_and_preprocess_data(for_training=True)
-    if data_split is None:
-        error_msg = "Fallo en la carga/preprocesamiento de datos. Abortando entrenamiento."
-        logging.error(error_msg)
-        # --- CAMBIO: Devolver estado de error ---
-        return {"status": "error", "message": error_msg}
+    # 1. Cargar Datos (Desde BD)
+    df = load_data_from_db()
+    if df.empty:
+        return {"status": "error", "message": "La base de datos está vacía o no se pudo leer."}
 
-    X_train, X_test, y_train, y_test = data_split
+    # 2. Preprocesar y OBTENER transformadores (Para guardarlos)
+    try:
+        # Desempaquetamos los 6 valores que devuelve la nueva función
+        X_train, X_test, y_train, y_test, label_encoder, scaler = preprocess_for_training(df)
+    except Exception as e:
+        return {"status": "error", "message": f"Error en preprocesamiento: {e}"}
 
-    if X_train.empty or X_test.empty:
+    if len(X_train) == 0 or len(X_test) == 0:
         error_msg = "No hay suficientes datos para entrenamiento o prueba después de dividir."
         logging.warning(error_msg)
         # --- CAMBIO: Devolver estado de error ---
@@ -156,8 +210,8 @@ def train_and_evaluate():
     if model_xgb is None:
         logging.warning("Fallo el entrenamiento de XGBoost. No se guardará este modelo.")
 
-    # 3. Entrenar MLP (T2)
-    model_mlp = train_mlp(X_train.values, y_train.values)
+    # X_train ya es numpy array, y_train es Series (tiene .values)
+    model_mlp = train_mlp(X_train, y_train.values)
     if model_mlp is None:
          logging.warning("Fallo el entrenamiento del MLP. No se guardará este modelo.")
     
@@ -182,7 +236,7 @@ def train_and_evaluate():
     # 5. Evaluar MLP (T3)
     if model_mlp:
         try:
-            y_pred_mlp = model_mlp.predict(X_test.values).flatten()
+            y_pred_mlp = model_mlp.predict(X_test).flatten()
             metrics_mlp = evaluate_model(y_test, y_pred_mlp, "MLP (Keras - MVP)")
             all_metrics.append(metrics_mlp) # Añadir métricas a la lista
         except Exception as e:
@@ -230,6 +284,17 @@ def train_and_evaluate():
                 logging.info(f"Modelo MLP anterior eliminado ({MLP_MODEL_PATH}).")
              except OSError as e:
                   logging.error(f"Error al eliminar modelo MLP anterior: {e}")
+    
+    # --- AGREGADO CRÍTICO HU-006: Guardar Transformadores ---
+    # Guardamos los "traductores" (Scaler y Encoder) para que el sistema pueda predecir datos futuros
+    try:
+        joblib.dump(scaler, SCALER_PATH)
+        joblib.dump(label_encoder, ENCODER_PATH)
+        save_status.append("Scaler y Encoder actualizados.")
+        logging.info("Transformadores (Scaler/Encoder) guardados correctamente.")
+    except Exception as e:
+        logging.error(f"Error guardando transformadores: {e}")
+    # ------------------------------------------------------
 
 
     logging.info("--- PIPELINE DE ENTRENAMIENTO (MVP) COMPLETADO ---")
