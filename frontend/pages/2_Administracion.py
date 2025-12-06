@@ -5,6 +5,10 @@ import os
 import sys
 from pathlib import Path
 
+# [NUEVO] Motor de estilos
+from frontend.styles import get_app_css
+
+
 # --- CONFIGURACIÓN DE RUTAS (Path Fix) ---
 # Agregamos la raíz del proyecto al sys.path para importar config
 root_path = Path(__file__).parent.parent.parent
@@ -35,54 +39,68 @@ if st.session_state.user['rol'] == 'Vendedora':
     st.stop()
 # ----------------------------------------------------
 
-st.title("Panel de Administración 🛡️")
-st.markdown("""
-Esta página permite ejecutar operaciones críticas del sistema y monitorear su rendimiento.
-""")
-    
-# Contenedor para la acción de re-entrenamiento
-with st.container(border=True):
-    st.subheader("🤖 Re-entrenamiento del Modelo")
-    st.markdown("""
-    Presione este botón para forzar al sistema a re-entrenar los modelos de predicción (MLP y XGBoost) 
-    utilizando **todos los datos** actualmente disponibles en la base de datos `ventas_historicas`.
-    """)
-    st.warning("""
-    **Advertencia:** Esta operación es intensiva y no se puede deshacer.
-    1.  Puede tardar varios minutos en completarse.
-    2.  Reemplazará los modelos actuales que están en producción.
-    3.  Se recomienda realizar esta acción solo después de una carga de datos significativa.
-    """)
-    
-    # El botón de re-entrenamiento
-    if st.button("Iniciar Re-entrenamiento del Modelo", type="primary", use_container_width=True):
-        try:
-            # Mostrar un spinner mientras el backend trabaja
-            with st.spinner("Iniciando re-entrenamiento... Esto puede tardar varios minutos. Por favor, no cierre esta ventana."):
-                
-                # Llamar al nuevo endpoint del backend
-                # Usamos un timeout largo (600 segundos = 10 minutos) porque el entrenamiento puede tardar
-                response = requests.post(URL_RETRAIN, timeout=600)
+# ----------------------------------------------------
 
-                # Manejar la respuesta del backend
-                if response.status_code == 200:
-                    st.success(f"✅ ¡Re-entrenamiento completado con éxito!")
-                    st.json(response.json()) # Mostrar el JSON de respuesta (que tendrá el mensaje y métricas)
-                else:
-                    # Mostrar el error devuelto por el backend
-                    error_msg = response.json().get('error', 'Error desconocido del backend.')
-                    st.error(f"Error {response.status_code}: {error_msg}")
-        
-        except requests.exceptions.ConnectionError:
-            st.error(f"Error de Conexión: No se pudo conectar al backend en {BACKEND_URL_RETRAIN}. ¿Está el backend (python -m backend.app) corriendo?")
-        except requests.exceptions.Timeout:
-            st.error("Error: La solicitud de re-entrenamiento superó el tiempo límite (10 minutos). El servidor puede seguir entrenando en segundo plano.")
-        except Exception as e:
-            st.error(f"Ocurrió un error inesperado al contactar el backend: {e}")
+# [NUEVO] Inyectar CSS Global
+st.markdown(get_app_css(), unsafe_allow_html=True)
+
+# [NUEVO] Encabezado Corporativo
+st.markdown('<h1 style="color:#0F2942; margin-bottom: 5px;">🛡️ Panel de Administración</h1>', unsafe_allow_html=True)
+st.markdown(
+    '<p style="color:#64748B;">Centro de comando para operaciones críticas y monitoreo de rendimiento del sistema.</p>', 
+    unsafe_allow_html=True
+)
+    
+# Contenedor para la acción de re-entrenamiento (Custom Critical Card)
+st.markdown(
+    """
+    <div class="metric-card" style="border-left: 5px solid #EF4444; margin-bottom: 30px;">
+    <h3 style="color:#0F2942; font-size: 18px; margin-top: 0;">🤖 Re-entrenamiento del Modelo</h3>
+    """, unsafe_allow_html=True
+)
+st.markdown("""
+Presione este botón para forzar al sistema a re-entrenar los modelos de predicción (MLP y XGBoost) 
+utilizando **todos los datos** actualmente disponibles en la base de datos `ventas_historicas`.
+""")
+st.warning("""
+**Advertencia:** Esta operación es intensiva y no se puede deshacer.
+1.  Puede tardar varios minutos en completarse.
+2.  Reemplazará los modelos actuales que están en producción.
+3.  Se recomienda realizar esta acción solo después de una carga de datos significativa.
+""")
+
+# El botón de re-entrenamiento
+if st.button("Iniciar Re-entrenamiento del Modelo", type="primary", use_container_width=True):
+    try:
+        # Mostrar un spinner mientras el backend trabaja
+        with st.spinner("Iniciando re-entrenamiento... Esto puede tardar varios minutos. Por favor, no cierre esta ventana."):
+            
+            # Llamar al nuevo endpoint del backend
+            # Usamos un timeout largo (600 segundos = 10 minutos) porque el entrenamiento puede tardar
+            response = requests.post(URL_RETRAIN, timeout=600)
+
+            # Manejar la respuesta del backend
+            if response.status_code == 200:
+                st.success(f"✅ ¡Re-entrenamiento completado con éxito!")
+                st.json(response.json()) # Mostrar el JSON de respuesta (que tendrá el mensaje y métricas)
+            else:
+                # Mostrar el error devuelto por el backend
+                error_msg = response.json().get('error', 'Error desconocido del backend.')
+                st.error(f"Error {response.status_code}: {error_msg}")
+    
+    except requests.exceptions.ConnectionError:
+        st.error(f"Error de Conexión: No se pudo conectar al backend en {URL_RETRAIN}. ¿Está el backend (python -m backend.app) corriendo?")
+    except requests.exceptions.Timeout:
+        st.error("Error: La solicitud de re-entrenamiento superó el tiempo límite (10 minutos). El servidor puede seguir entrenando en segundo plano.")
+    except Exception as e:
+        st.error(f"Ocurrió un error inesperado al contactar el backend: {e}")
+
+# [NUEVO] Cerrar el div de la tarjeta de re-entrenamiento
+st.markdown("</div>", unsafe_allow_html=True)
 # --- SECCIÓN NUEVA: MONITOREO DE MÉTRICAS (HU-011) ---
-st.divider() # Línea separadora visual
-st.header("📊 Monitoreo de Rendimiento del Modelo")
-st.markdown("Historial de precisión (MAE/RMSE) registrado tras cada re-entrenamiento.")
+st.markdown('<br><br>', unsafe_allow_html=True) # Espaciador
+st.markdown('<h2 style="color:#0F2942; font-size: 24px;">📊 Monitoreo de Rendimiento del Modelo</h2>', unsafe_allow_html=True)
+st.markdown('<p style="color:#64748B;">Historial de precisión (MAE/RMSE) registrado tras cada re-entrenamiento.</p>', unsafe_allow_html=True)
 
 # Botón para refrescar datos manualmente
 if st.button("🔄 Actualizar Gráficos de Rendimiento"):

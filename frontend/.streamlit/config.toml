@@ -1,24 +1,25 @@
-# --- Configuración del Tema Global de Streamlit (Fase 1) ---
-# Este archivo define la apariencia visual de la aplicación.
-# Streamlit lo detecta automáticamente al reiniciar.
+# --- Identidad Visual Corporativa: Teo Analytics (Fase 1) ---
+# Estilo: Automotive Tech Enterprise
+# Paleta: Navy Blue, Steel Grey & Pure White
 
 [theme]
-# Color primario (botones, sliders, elementos interactivos)
-# Usaremos un azul corporativo y profesional.
-primaryColor="#004A99"
+# Color Primario: Navy Blue Profundo
+# Transmite confianza, estabilidad y liderazgo corporativo.
+# Afecta a: Botones primarios, sliders, toggles y bordes de foco.
+primaryColor="#0F2942"
 
-# Color de fondo principal de la aplicación
-# Usaremos un gris muy claro para un aspecto limpio y moderno.
-backgroundColor="#F5F5F5"
+# Color de Fondo Principal: Blanco Puro
+# Lienzo limpio para maximizar la legibilidad de KPIs y Gráficos.
+backgroundColor="#FFFFFF"
 
-# Color de fondo secundario (barra lateral, contenedores)
-# Un blanco para contrastar con el fondo gris.
-secondaryBackgroundColor="#FFFFFF"
+# Color de Fondo Secundario: Gris Acero (Slate-50)
+# Diferenciación sutil para la barra lateral y áreas de widgets.
+secondaryBackgroundColor="#F1F5F9"
 
-# Color del texto principal
-# Un gris oscuro en lugar de negro puro, es más suave a la vista.
-textColor="#31333F"
+# Color del Texto: Gris Carbón (Slate-700)
+# Alto contraste sin la dureza del negro absoluto (#000000).
+textColor="#334155"
 
-# Fuente a usar en toda la aplicación
-# "sans serif" es moderna y la más legible en pantallas.
+# Tipografía: Sans Serif Moderna
+# Interfaz limpia y legible, estándar en la industria tecnológica.
 font="sans serif"
