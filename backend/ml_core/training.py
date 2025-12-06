@@ -15,7 +15,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
-from backend.database.db_utils import get_db_engine
+from backend.database.db_utils import get_db_engine, save_model_metric # --- NUEVO: save_model_metric
 import json # Útil para logs estructurados
 
 # --- Constantes (Revertidas a MVP) ---
@@ -242,6 +242,42 @@ def train_and_evaluate():
         except Exception as e:
             logging.error(f"Error durante la evaluación del MLP: {e}", exc_info=True)
 
+    # --- CÁLCULO DE MÉTRICA HÍBRIDA (HU-011) ---
+    final_metrics_to_save = None
+    
+    if model_xgb and model_mlp:
+        # Calcular predicción combinada para evaluar el modelo final real
+        try:
+            pred_xgb = model_xgb.predict(X_test)
+            pred_mlp = model_mlp.predict(X_test).flatten()
+            
+            # Promedio (Lógica de producción)
+            hybrid_pred = (pred_xgb + pred_mlp) / 2
+            
+            # Evaluar Híbrido
+            final_metrics_to_save = evaluate_model(y_test, hybrid_pred, "Modelo Híbrido (XGB + MLP)")
+            all_metrics.append(final_metrics_to_save)
+            
+        except Exception as e:
+            logging.error(f"Error evaluando modelo híbrido: {e}")
+
+    elif model_xgb:
+        # Si solo hay XGB, ese es el final
+        final_metrics_to_save = metrics_xgb
+    elif model_mlp:
+        # Si solo hay MLP, ese es el final
+        final_metrics_to_save = metrics_mlp
+
+    # --- GUARDAR EN BD (HU-011) ---
+    if final_metrics_to_save:
+        try:
+            engine = get_db_engine()
+            if engine:
+                save_model_metric(final_metrics_to_save, engine)
+                logging.info("Métricas del modelo final guardadas en BD (HU-011).")
+        except Exception as e:
+            logging.error(f"No se pudo guardar historial de métricas: {e}")
+    # ------------------------------
 
     # 6. Guardar (T4)
     logging.info("\nGuardando modelos MVP entrenados (si el entrenamiento fue exitoso)...")
