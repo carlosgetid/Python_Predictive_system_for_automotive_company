@@ -6,29 +6,28 @@ import sys
 from pathlib import Path
 
 # --- CONFIGURACIÓN DE RUTAS (Path Fix) ---
-# Agregamos la raíz del proyecto al sys.path para importar config correctamente
-# frontend/Inicio.py -> parent = frontend -> parent = raiz
 root_path = Path(__file__).parent.parent
 sys.path.append(str(root_path))
 
-# --- IMPORTACIÓN DE CONFIGURACIÓN ---
+# --- IMPORTACIÓN DE CONFIGURACIÓN Y ESTILOS ---
 try:
-    from frontend.config import URL_LOGIN, HIDE_SIDEBAR_CSS, get_role_based_sidebar_css
+    from frontend.config import URL_LOGIN, get_role_based_sidebar_css
+    # [NUEVO] Importamos el motor de estilos
+    from frontend.styles import get_app_css 
 except ImportError:
-    # Fallback por si falla la importación
+    # Fallback
     BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
     BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
     URL_LOGIN = f"http://{BACKEND_HOST}:{BACKEND_PORT}/login"
-    HIDE_SIDEBAR_CSS = ""
     def get_role_based_sidebar_css(role): return ""
+    def get_app_css(): return ""
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-# Debe ser la primera instrucción de Streamlit
 st.set_page_config(
-    page_title="Sistema Predictivo - Login",
+    page_title="Teo Analytics - Acceso",
     page_icon="🚗",
-    layout="centered", # Centrado para el Login
-    initial_sidebar_state="collapsed" # Ocultar sidebar en login
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
 # --- GESTIÓN DE ESTADO DE SESIÓN ---
@@ -36,95 +35,137 @@ if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user = None
 
-# --- FUNCIÓN DE LOGIN ---
+# --- FUNCIÓN DE LOGIN (CORREGIDA) ---
 def login_screen():
-    # --- NUEVO: Ocultar Sidebar visualmente ---
-    st.markdown(HIDE_SIDEBAR_CSS, unsafe_allow_html=True)
-    # ------------------------------------------
+    # 1. Inyectar CSS Global
+    st.markdown(get_app_css(), unsafe_allow_html=True)
     
-    st.title("🔐 Iniciar Sesión")
-    st.markdown("### Sistema Predictivo de Gestión de Inventarios")
-    st.markdown("Ingrese sus credenciales corporativas para continuar.")
+    # 2. CSS Local para la Tarjeta
+    st.markdown("""
+        <style>
+            /* Convertir el formulario nativo en la Login Card */
+            [data-testid="stForm"] {
+                background-color: #FFFFFF;
+                border: 1px solid #E2E8F0;
+                border-radius: 16px;
+                padding: 40px;
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+                border-top: 6px solid #0F2942;
+                max-width: 450px;
+                margin: 0 auto;
+            }
+            /* --- NUEVO: Ocultar completamente la Sidebar y su botón --- */
+            [data-testid="stSidebar"] { display: none; }
+            [data-testid="collapsedControl"] { display: none; }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<div style='height: 5vh;'></div>", unsafe_allow_html=True)
     
     with st.form("login_form"):
-        username = st.text_input("Usuario", placeholder="Ej. lfernandez")
-        password = st.text_input("Contraseña", type="password")
+        st.markdown("""
+            <div style="text-align: center; margin-bottom: 25px;">
+                <div class="login-header">🔐 Iniciar Sesión</div>
+                <div class="login-subtext">
+                    <b>Teo Analytics</b><br>Plataforma de Inteligencia Automotriz
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
         
-        submitted = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
+        username = st.text_input("Usuario Corporativo", placeholder="Ej. lfernandez")
+        password = st.text_input("Contraseña", type="password", placeholder="••••••••")
         
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        
+        submitted = st.form_submit_button("Acceder a la Plataforma", type="primary", use_container_width=True)
+        
+        # --- [RESTAURADO] LÓGICA DE AUTENTICACIÓN ---
         if submitted:
             if not username or not password:
-                st.error("⚠️ Por favor ingrese usuario y contraseña.")
+                st.warning("⚠️ Ingrese sus credenciales para continuar.")
                 return
 
             try:
-                with st.spinner("Verificando credenciales..."):
-                    # Llamada al API de Autenticación
+                with st.spinner("Validando acceso..."):
                     payload = {"username": username, "password": password}
                     response = requests.post(URL_LOGIN, json=payload, timeout=5)
                     
                     if response.status_code == 200:
-                        # Login Exitoso
                         data = response.json()
                         st.session_state.authenticated = True
                         st.session_state.user = data.get("user")
                         
-                        st.success(f"¡Bienvenido {st.session_state.user['nombre']}!")
-                        time.sleep(0.5)
-                        st.rerun() # Recargar para mostrar el Dashboard
+                        st.toast(f"¡Bienvenido, {st.session_state.user['nombre']}!", icon="👋")
+                        time.sleep(0.8)
+                        st.rerun()
                         
                     elif response.status_code == 401:
-                        st.error("❌ Usuario o contraseña incorrectos.")
+                        st.error("Credenciales incorrectas. Verifique e intente nuevamente.")
                     else:
-                        st.error(f"Error del servidor: {response.text}")
+                        st.error(f"Error de conexión ({response.status_code})")
             
             except requests.exceptions.ConnectionError:
-                st.error("❌ No se pudo conectar al servidor Backend. Verifique que esté corriendo.")
+                st.error("❌ Servidor no disponible. Contacte a soporte TI.")
             except Exception as e:
-                st.error(f"Ocurrió un error inesperado: {e}")
+                st.error(f"Error inesperado: {e}")
+        # ---------------------------------------------
 
-# --- FUNCIÓN DE DASHBOARD (App Principal) ---
+    st.markdown("""
+        <div style="text-align: center; margin-top: 30px; color: #94A3B8; font-size: 12px;">
+            © 2024 Teo Autopartes S.A.C. | v2.0 Enterprise Release
+        </div>
+    """, unsafe_allow_html=True)
+
+# --- FUNCIÓN DE DASHBOARD ---
 def dashboard_screen():
-    # --- RBAC VISUAL: Ocultar pestañas no permitidas ---
+    st.markdown(get_app_css(), unsafe_allow_html=True)
+    
     role_css = get_role_based_sidebar_css(st.session_state.user['rol'])
     st.markdown(role_css, unsafe_allow_html=True)
-    # ---------------------------------------------------
 
-    # Cambiar layout visualmente (hack)
-    # ... resto del código ...
     with st.sidebar:
-        st.title(f"👤 {st.session_state.user['nombre']}")
-        st.caption(f"Rol: **{st.session_state.user['rol']}**")
-        st.divider()
+        st.markdown(f"""
+            <div style="padding: 10px 0;">
+                <h2 style="color: #F8FAFC; margin:0;">Teo Analytics</h2>
+                <p style="color: #94A3B8; font-size: 12px; margin:0;">Enterprise Edition</p>
+            </div>
+            <hr style="margin: 10px 0; border-color: #334155;">
+        """, unsafe_allow_html=True)
+        
+        st.write(f"👤 **{st.session_state.user['nombre']}**")
+        st.caption(f"Perfil: {st.session_state.user['rol']}")
+        
+        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
         
         if st.button("Cerrar Sesión", type="secondary", use_container_width=True):
             st.session_state.authenticated = False
             st.session_state.user = None
             st.rerun()
 
-    # Contenido Principal
-    st.write(f"# Hola, {st.session_state.user['nombre'].split()[0]} 👋")
-    st.markdown(f"Has ingresado como: **{st.session_state.user['rol']}**")
-    st.divider()
+    st.title(f"Bienvenido, {st.session_state.user['nombre'].split()[0]}")
+    st.markdown("### Acceso Rápido")
     
-    st.markdown(
-        """
-        Bienvenido al sistema de optimización de inventarios **Teo Autopartes**.
-        Seleccione una opción en el menú lateral según su perfil:
-        """
-    )
-    
-    # Tarjetas de Acceso Rápido
     col1, col2 = st.columns(2)
     
     with col1:
-        st.info("📤 **Carga de Datos**\n\nSubida de históricos y gestión de archivos transaccionales.")
-        st.success("📈 **Predicción**\n\nGeneración de pronósticos de demanda por producto.")
+        st.markdown("""
+        <div class="metric-card">
+            <div class="metric-title" style="color: #0F2942;">📤 Operaciones</div>
+            <p style="color: #64748B; font-size: 14px;">
+                Carga de históricos y gestión de archivos.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
         
     with col2:
-        st.warning("⚙️ **Administración**\n\nRe-entrenamiento del modelo, monitoreo de métricas y configuración.")
-        
-    st.caption("v1.2.0 - Sprint 2 Release")
+        st.markdown("""
+        <div class="metric-card">
+            <div class="metric-title" style="color: #0F2942;">📊 Analítica</div>
+            <p style="color: #64748B; font-size: 14px;">
+                Dashboards de predicción y reportes de IA.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # --- CONTROLADOR PRINCIPAL ---
 if not st.session_state.authenticated:

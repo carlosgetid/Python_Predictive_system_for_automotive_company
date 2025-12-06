@@ -8,6 +8,8 @@ from pathlib import Path
 from io import BytesIO
 
 from frontend.config import get_setting # Para leer el archivo en memoria para la vista previa
+# [NUEVO] Motor de estilos
+from frontend.styles import get_app_css
 
 
 # --- PROTECCIÓN DE PÁGINA (Login Required + RBAC) ---
@@ -26,18 +28,25 @@ if st.session_state.user['rol'] == 'Vendedora':
 MOSTRAR_CARGA_MANUAL = get_setting("MOSTRAR_CARGA_MANUAL", True)
 
 # Aquí solo establecemos el título de esta página específica.
-st.title("📄 Carga de Datos Transaccionales")
+# 1. Inyectar CSS Global
+st.markdown(get_app_css(), unsafe_allow_html=True)
+
+# 2. Encabezado Corporativo
+st.markdown('<h1 style="color:#0F2942; margin-bottom: 10px;">📄 Ingesta de Datos Transaccionales</h1>', unsafe_allow_html=True)
 
 # --- INICIO DEL BLOQUE CONDICIONAL ---
 if MOSTRAR_CARGA_MANUAL:
-    # --- Tarea HU-001.T1: Diseño de la interfaz (Rediseñado) ---
+    # --- Tarjeta de Instrucciones (Estilo Enterprise) ---
     st.markdown("""
-    Esta página le permite cargar nuevos datos históricos de ventas al sistema.
-
-    1.  Cargue un archivo Excel (ej. `Factura_Importacion_PLUS_*.xlsx`). El sistema leerá la hoja **'Detalle'**.
-    2.  Revise la vista previa para confirmar que los datos son correctos.
-    3.  Haga clic en "Procesar" para guardar los datos en la base de datos.
-    """)
+    <div class="metric-card" style="padding: 20px; margin-bottom: 25px; border-left: 4px solid #0F2942;">
+        <h4 style="margin-top:0; color:#334155; font-size: 16px;">Guía de Proceso</h4>
+        <ol style="color:#64748B; margin-bottom:0; font-size: 14px; padding-left: 20px;">
+            <li>Cargue el archivo <b>Excel</b> corporativo (<i>Factura_Importacion_PLUS_*.xlsx</i>).</li>
+            <li>El sistema validará automáticamente la hoja <b>'Detalle'</b> y generará una vista previa.</li>
+            <li>Confirme la consistencia de los datos y ejecute la carga a la base de datos.</li>
+        </ol>
+    </div>
+    """, unsafe_allow_html=True)
 
     # URL del backend (API Flask)
     BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
@@ -47,11 +56,10 @@ if MOSTRAR_CARGA_MANUAL:
     # Configurar logging básico (opcional)
     logging.basicConfig(level=logging.INFO)
 
-    # --- Contenedor Principal (Fase 3 - Tarea 3) ---
-    # Agrupamos toda la funcionalidad en un contenedor visual
+    # --- Contenedor Principal (Panel de Pasos) ---
     with st.container(border=True):
-
-        st.subheader("Paso 1: Seleccionar Archivo")
+        # Paso 1 con estilo HTML
+        st.markdown('<h3 style="color:#0F2942; font-size: 18px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">1. Selección de Archivo Fuente</h3>', unsafe_allow_html=True)
         
         # --- Tarea HU-001.T2: Componente de Carga de Archivos ---
         uploaded_file = st.file_uploader(
@@ -62,8 +70,9 @@ if MOSTRAR_CARGA_MANUAL:
         )
 
         if uploaded_file is not None:
-            # --- Vista Previa (Fase 3 - Tarea 5) ---
-            st.subheader("Paso 2: Revisar Vista Previa")
+            # --- Vista Previa ---
+            st.markdown('<br>', unsafe_allow_html=True)
+            st.markdown('<h3 style="color:#0F2942; font-size: 18px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">2. Validación y Previsualización</h3>', unsafe_allow_html=True)
             try:
                 df_preview = None
                 # Clonamos el objeto de archivo cargado en memoria
@@ -98,8 +107,10 @@ if MOSTRAR_CARGA_MANUAL:
                     if not df_preview.empty:
                         st.dataframe(df_preview.head())
 
-                        # --- Botón de procesamiento (Fase 3 - Tarea 3) ---
-                        st.subheader("Paso 3: Guardar en Base de Datos")
+                        # --- Botón de procesamiento ---
+                        st.markdown('<br>', unsafe_allow_html=True)
+                        st.markdown('<h3 style="color:#0F2942; font-size: 18px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">3. Ejecución de Carga</h3>', unsafe_allow_html=True)
+                        st.caption("Esta acción registrará los datos validados en el histórico permanente.")
                         if st.button("Procesar y Guardar en Base de Datos"): # El color lo toma del config.toml
                             with st.spinner("Conectando con el backend... Validando y guardando datos..."):
                                 # Preparamos el archivo REAL para enviarlo a la API
@@ -109,7 +120,7 @@ if MOSTRAR_CARGA_MANUAL:
                                 }
 
                                 try:
-                                    response = requests.post(URL_UPLOAD, files=files, timeout=300) 
+                                    response = requests.post(BACKEND_URL_UPLOAD, files=files, timeout=300) 
 
                                     # --- Feedback Visual (Fase 3 - Tarea 5) ---
                                     if response.status_code == 201: # Creado
@@ -124,7 +135,7 @@ if MOSTRAR_CARGA_MANUAL:
                                         st.error(f"Error desde el backend: {error_msg}")
 
                                 except requests.exceptions.ConnectionError:
-                                    st.error(f"Error de Conexión: No se pudo conectar al backend en {URL_UPLOAD}.")
+                                    st.error(f"Error de Conexión: No se pudo conectar al backend en {BACKEND_URL_UPLOAD}.")
                                 except requests.exceptions.Timeout:
                                     st.error("Error: La solicitud al backend tardó demasiado (timeout).")
                                 except Exception as e:
@@ -145,13 +156,19 @@ if MOSTRAR_CARGA_MANUAL:
             st.info("Por favor, cargue un archivo para comenzar.")
 
 else:
-    # --- Vista cuando la funcionalidad está deshabilitada (HU-010) ---
-    st.info("ℹ️ La carga manual de datos está deshabilitada por el administrador.")
+    # --- Vista cuando la funcionalidad está deshabilitada (Tarjeta de Estado) ---
     st.markdown("""
-    El sistema está configurado para **Ingesta Automatizada Batch**. 
-    
-    Por favor, deposite los archivos `.xlsx` en el directorio de entrada del servidor:
-    `data_fuente/entrada/`
-    
-    El sistema procesará los archivos automáticamente en el siguiente ciclo.
-    """)
+    <div class="metric-card" style="background-color: #F8FAFC; border-left: 5px solid #64748B;">
+        <h3 style="color: #0F2942; margin-top: 0;">🔒 Modo Manual Deshabilitado</h3>
+        <p style="color: #475569; font-size: 14px;">
+            El sistema está operando bajo políticas de <b>Ingesta Automatizada (Batch)</b>.
+            La carga manual a través de la interfaz web ha sido restringida por el administrador.
+        </p>
+        <div style="background-color: #E2E8F0; padding: 12px; border-radius: 6px; font-family: monospace; color: #334155; font-size: 13px; margin: 15px 0;">
+            📥 Directorio de Entrada: /data_fuente/entrada/
+        </div>
+        <p style="color: #94A3B8; font-size: 12px; margin-bottom: 0;">
+            Los archivos .xlsx depositados en el servidor serán procesados automáticamente por el worker de ingesta.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
