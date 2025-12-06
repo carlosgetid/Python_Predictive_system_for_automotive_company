@@ -13,12 +13,13 @@ sys.path.append(str(root_path))
 
 # --- IMPORTACIÓN DE CONFIGURACIÓN ---
 try:
-    from frontend.config import URL_LOGIN
+    from frontend.config import URL_LOGIN, HIDE_SIDEBAR_CSS # --- NUEVO: Importar CSS
 except ImportError:
     # Fallback por si falla la importación
     BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
     BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
     URL_LOGIN = f"http://{BACKEND_HOST}:{BACKEND_PORT}/login"
+    HIDE_SIDEBAR_CSS = "" # Fallback vacío
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 # Debe ser la primera instrucción de Streamlit
@@ -36,6 +37,10 @@ if 'authenticated' not in st.session_state:
 
 # --- FUNCIÓN DE LOGIN ---
 def login_screen():
+    # --- NUEVO: Ocultar Sidebar visualmente ---
+    st.markdown(HIDE_SIDEBAR_CSS, unsafe_allow_html=True)
+    # ------------------------------------------
+    
     st.title("🔐 Iniciar Sesión")
     st.markdown("### Sistema Predictivo de Gestión de Inventarios")
     st.markdown("Ingrese sus credenciales corporativas para continuar.")
