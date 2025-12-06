@@ -6,8 +6,7 @@ import datetime
 import os 
 
 # Importar lógica BD
-from backend.database.db_utils import get_db_engine, save_dataframe_to_db
-
+from backend.database.db_utils import get_db_engine, save_dataframe_to_db, get_model_metrics_history
 # --- INICIO DE AGREGADO ---
 # Importamos el Servicio de Ingesta (HU-010)
 from backend.services.ingestion_service import ingest_dataframe_to_db, process_excel_file_from_disk
@@ -306,5 +305,31 @@ def trigger_retraining():
         # Captura de error general para el endpoint
         logging.error(f"Error inesperado durante /trigger_retraining: {e}", exc_info=True)
         return jsonify({"error": f"Error interno del servidor durante el re-entrenamiento: {str(e)}"}), 500
-# --- FIN DE NUEVO CÓDIGO ---
 
+# --- Endpoint 7: Obtener Historial de Métricas (HU-011) ---
+@api_bp.route('/api/v1/metrics', methods=['GET'])
+def get_metrics_history():
+    """
+    Devuelve el historial de métricas de rendimiento de los modelos
+    almacenado en la base de datos (tabla model_metrics).
+    """
+    try:
+        engine = get_db_engine()
+        if engine is None:
+            return jsonify({"error": "Error interno: No hay conexión a BD"}), 500
+
+        # Obtener historial usando la función de utilidad
+        df_metrics = get_model_metrics_history(engine)
+        
+        # Si está vacío, devolver lista vacía
+        if df_metrics.empty:
+            return jsonify({"metrics": []}), 200
+            
+        # Convertir a lista de diccionarios para JSON
+        metrics_data = df_metrics.to_dict(orient='records')
+        
+        return jsonify({"metrics": metrics_data}), 200
+
+    except Exception as e:
+        logging.error(f"Error obteniendo historial de métricas: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500

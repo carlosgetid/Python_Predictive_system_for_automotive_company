@@ -1,22 +1,33 @@
 import streamlit as st
 import requests
+import pandas as pd # --- NUEVO: Necesario para gráficos
 import os
-import time
+import sys
+from pathlib import Path
 
-# --- Configuración de la Página ---
-# No usamos st.set_page_config() aquí, ya se llamó en app.py
+# --- CONFIGURACIÓN DE RUTAS (Path Fix) ---
+# Agregamos la raíz del proyecto al sys.path para importar config
+root_path = Path(__file__).parent.parent.parent
+sys.path.append(str(root_path))
+
+# --- IMPORTACIÓN DE CONFIGURACIÓN ---
+try:
+    # Intentamos importar del archivo centralizado
+    from frontend.config import URL_RETRAIN, BASE_URL
+    # Construimos la URL de métricas basada en la BASE_URL importada
+    URL_METRICS = f"{BASE_URL}/api/v1/metrics"
+except ImportError:
+    # Fallback por si falla el import
+    BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
+    BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
+    BASE_URL = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
+    URL_RETRAIN = f"{BASE_URL}/api/v1/trigger_retraining"
+    URL_METRICS = f"{BASE_URL}/api/v1/metrics"
+
 st.title("Panel de Administración 🛡️")
 st.markdown("""
-Esta página permite ejecutar operaciones críticas del sistema, como el 
-re-entrenamiento de los modelos de Machine Learning.
+Esta página permite ejecutar operaciones críticas del sistema y monitorear su rendimiento.
 """)
-
-# --- URL del Backend ---
-# Definir la URL del nuevo endpoint que crearemos en el backend
-BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
-BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
-# Este es el NUEVO endpoint que debemos crear en routes.py
-BACKEND_URL_RETRAIN = f"http://{BACKEND_HOST}:{BACKEND_PORT}/api/v1/trigger_retraining"
 
 
 # --- Lógica de Contraseña Simple ---
@@ -75,7 +86,7 @@ if check_password():
                     
                     # Llamar al nuevo endpoint del backend
                     # Usamos un timeout largo (600 segundos = 10 minutos) porque el entrenamiento puede tardar
-                    response = requests.post(BACKEND_URL_RETRAIN, timeout=600)
+                    response = requests.post(URL_RETRAIN, timeout=600)
 
                     # Manejar la respuesta del backend
                     if response.status_code == 200:
@@ -92,3 +103,49 @@ if check_password():
                 st.error("Error: La solicitud de re-entrenamiento superó el tiempo límite (10 minutos). El servidor puede seguir entrenando en segundo plano.")
             except Exception as e:
                 st.error(f"Ocurrió un error inesperado al contactar el backend: {e}")
+    # --- SECCIÓN NUEVA: MONITOREO DE MÉTRICAS (HU-011) ---
+    st.divider() # Línea separadora visual
+    st.header("📊 Monitoreo de Rendimiento del Modelo")
+    st.markdown("Historial de precisión (MAE/RMSE) registrado tras cada re-entrenamiento.")
+
+    # Botón para refrescar datos manualmente
+    if st.button("🔄 Actualizar Gráficos de Rendimiento"):
+        try:
+            with st.spinner("Obteniendo historial de métricas..."):
+                response = requests.get(URL_METRICS, timeout=10)
+                
+            if response.status_code == 200:
+                data = response.json().get("metrics", [])
+                
+                if data:
+                    # Convertir a DataFrame para graficar
+                    df_metrics = pd.DataFrame(data)
+                    
+                    # Convertir fecha a objeto datetime para que el gráfico la entienda
+                    if 'fecha_registro' in df_metrics.columns:
+                        df_metrics['fecha_registro'] = pd.to_datetime(df_metrics['fecha_registro'])
+
+                    # 1. Gráfico de Líneas (Evolución del Error)
+                    st.subheader("Evolución del Error (MAE y RMSE)")
+                    st.caption("Nota: Valores más bajos indican mejor precisión.")
+                    
+                    # Usamos 'fecha_registro' como eje X
+                    chart_data = df_metrics.set_index('fecha_registro')[['mae', 'rmse']]
+                    st.line_chart(chart_data)
+
+                    # 2. Tabla de Datos Recientes
+                    st.subheader("Registros Detallados")
+                    # Mostrar primero lo más reciente
+                    st.dataframe(
+                        df_metrics.sort_values(by='fecha_registro', ascending=False),
+                        use_container_width=True
+                    )
+                else:
+                    st.info("Aún no hay métricas registradas. Ejecute un re-entrenamiento para generar el primer punto de datos.")
+            else:
+                st.error(f"Error al obtener métricas del servidor: {response.text}")
+
+        except requests.exceptions.ConnectionError:
+            st.error("No se pudo conectar con el servidor para obtener las métricas.")
+        except Exception as e:
+            st.error(f"Error inesperado al procesar las métricas: {e}")
