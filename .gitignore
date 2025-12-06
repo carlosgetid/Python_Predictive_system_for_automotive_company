@@ -7,7 +7,6 @@ venv/
 
 # Archivos de configuración y secretos
 *.env
-config.py
 
 # Bases de datos locales
 *.db
@@ -21,3 +20,4 @@ Thumbs.db
 .vscode/
 .idea/
 
+backend/config.py

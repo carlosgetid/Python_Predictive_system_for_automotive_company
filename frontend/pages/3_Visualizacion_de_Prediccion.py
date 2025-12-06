@@ -4,10 +4,40 @@ import pandas as pd
 import datetime
 import logging
 import os 
+import sys
+from pathlib import Path
 
-# --- Configuración de la Página ---
-# st.set_page_config() se llama ahora en Home.py, así que lo quitamos.
-# En su lugar, solo ponemos el título de esta página específica.
+# --- CONFIGURACIÓN DE RUTAS (Path Fix) ---
+root_path = Path(__file__).parent.parent.parent
+sys.path.append(str(root_path))
+
+# --- IMPORTACIÓN DE CONFIGURACIÓN ---
+try:
+    from frontend.config import URL_PREDICT, BASE_URL, get_role_based_sidebar_css
+    # Construimos URL_HISTORY usando la base importada
+    URL_HISTORY = f"{BASE_URL}/history"
+except ImportError:
+    # Fallback
+    BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
+    BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
+    BASE_URL = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
+    URL_PREDICT = f"{BASE_URL}/predict"
+    URL_HISTORY = f"{BASE_URL}/history"
+
+# Configuración básica de logging
+logging.basicConfig(level=logging.INFO)
+
+# --- PROTECCIÓN DE PÁGINA (Login Required) ---
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+    st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
+    st.stop()
+
+# --- RBAC VISUAL: Ocultar pestañas no permitidas ---
+# Esto asegura que Ana no vea enlaces a Admin/Carga mientras está aquí
+role_css = get_role_based_sidebar_css(st.session_state.user['rol'])
+st.markdown(role_css, unsafe_allow_html=True)
+# ---------------------------------------------------
+
 st.title("📈 Visualización de Predicción de Demanda")
 
 # --- Tarea HU-003.T1: Diseño de la interfaz (Rediseñado - Fase 4) ---
@@ -18,14 +48,6 @@ Esta página utiliza el modelo de Machine Learning entrenado para generar un pro
 2.  Seleccione la **fecha futura** para la cual desea el pronóstico.
 3.  Haga clic en "Generar Predicción" para ver el resultado.
 """)
-
-# --- Constantes de la API (Se mantienen) ---
-BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
-BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
-BACKEND_URL_PREDICT = f"http://{BACKEND_HOST}:{BACKEND_PORT}/predict"
-BACKEND_URL_HISTORY = f"http://{BACKEND_HOST}:{BACKEND_PORT}/history"
-
-logging.basicConfig(level=logging.INFO)
 
 # --- Contenedor de Entradas (Fase 4 - Tarea 2) ---
 with st.container(border=True):
@@ -72,8 +94,8 @@ if submit_button:
             with st.spinner(f"Consultando modelo e historial..."):
                 try:
                     # --- Llamadas a los Endpoints del Backend ---
-                    response_pred = requests.post(BACKEND_URL_PREDICT, json=payload_predict, timeout=60)
-                    response_hist = requests.post(BACKEND_URL_HISTORY, json=payload_history, timeout=60)
+                    response_pred = requests.post(URL_PREDICT, json=payload_predict, timeout=60)
+                    response_hist = requests.post(URL_HISTORY, json=payload_history, timeout=60)
 
                     # Dividir pantalla
                     col1, col2 = st.columns([1, 2])
@@ -125,7 +147,7 @@ if submit_button:
                             st.error(f"Error del Backend (Historial): {response_hist.status_code} - {response_hist.text}")
 
                 except requests.exceptions.ConnectionError:
-                    st.error(f"Error de Conexión: No se pudo conectar al backend en {BACKEND_URL_PREDICT}.")
+                    st.error(f"Error de Conexión: No se pudo conectar al backend en {URL_PREDICT}.")
                 except requests.exceptions.Timeout:
                      st.error("Error: La solicitud al backend tardó demasiado (timeout).")
                 except Exception as e:

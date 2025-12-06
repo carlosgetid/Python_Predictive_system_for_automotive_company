@@ -5,24 +5,25 @@ import os
 import logging 
 import sys
 from pathlib import Path
-from io import BytesIO # Para leer el archivo en memoria para la vista previa
+from io import BytesIO
+
+from frontend.config import get_setting # Para leer el archivo en memoria para la vista previa
 
 
-root_path = Path(__file__).parent.parent.parent
-sys.path.append(str(root_path))
+# --- PROTECCIÓN DE PÁGINA (Login Required + RBAC) ---
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+    st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
+    st.stop()
 
-# --- FEATURE FLAG (Control de Funcionalidad) ---
-# Cambiar a False para ocultar la carga manual si se usa solo Ingesta Automática
-try:
-    from frontend.config import MOSTRAR_CARGA_MANUAL, URL_UPLOAD
-except ImportError:
-    # Logueamos el error para depuración pero usamos fallbacks para no romper la app
-    logging.error(f"Error importando config: {e}. Usando valores por defecto.")
-    MOSTRAR_CARGA_MANUAL = True
-    URL_UPLOAD = "http://127.0.0.1:5000/upload"
+# Validación de Rol: Bloquear acceso a "Vendedora" (Ana)
+if st.session_state.user['rol'] == 'Vendedora':
+    st.error("⛔ Acceso Restringido: Su perfil no tiene permisos para cargar datos.")
+    st.stop()
+# ----------------------------------------------------
 
-# Configuración básica de logging
-logging.basicConfig(level=logging.INFO)
+# --- LEER CONFIGURACIÓN DINÁMICA ---
+# Leemos el estado actual desde el JSON cada vez que se carga la página
+MOSTRAR_CARGA_MANUAL = get_setting("MOSTRAR_CARGA_MANUAL", True)
 
 # Aquí solo establecemos el título de esta página específica.
 st.title("📄 Carga de Datos Transaccionales")
