@@ -11,18 +11,21 @@ from io import BytesIO # Para leer el archivo en memoria para la vista previa
 root_path = Path(__file__).parent.parent.parent
 sys.path.append(str(root_path))
 
-# --- FEATURE FLAG (Control de Funcionalidad) ---
-# Cambiar a False para ocultar la carga manual si se usa solo Ingesta Automática
 try:
-    from frontend.config import MOSTRAR_CARGA_MANUAL, URL_UPLOAD
-except ImportError:
-    # Logueamos el error para depuración pero usamos fallbacks para no romper la app
+    # Importamos get_setting para leer el valor actualizado en cada recarga
+    from frontend.config import get_setting, URL_UPLOAD
+except ImportError as e:
     logging.error(f"Error importando config: {e}. Usando valores por defecto.")
-    MOSTRAR_CARGA_MANUAL = True
+    # Función fallback si falla el import para no romper la app
+    def get_setting(key, default): return default
     URL_UPLOAD = "http://127.0.0.1:5000/upload"
 
 # Configuración básica de logging
 logging.basicConfig(level=logging.INFO)
+
+# --- LEER CONFIGURACIÓN DINÁMICA ---
+# Leemos el estado actual desde el JSON cada vez que se carga la página
+MOSTRAR_CARGA_MANUAL = get_setting("MOSTRAR_CARGA_MANUAL", True)
 
 # Aquí solo establecemos el título de esta página específica.
 st.title("📄 Carga de Datos Transaccionales")
