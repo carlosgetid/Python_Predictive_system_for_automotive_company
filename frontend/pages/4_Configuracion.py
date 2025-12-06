@@ -18,6 +18,11 @@ except ImportError as e:
 # Configuración básica de logging
 logging.basicConfig(level=logging.INFO)
 
+# --- PROTECCIÓN DE PÁGINA (Login Required) ---
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+    st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
+    st.stop()
+
 st.title("⚙️ Configuración del Sistema")
 st.markdown("Panel de control para ajustar el comportamiento de la interfaz de usuario y funcionalidades del sistema.")
 

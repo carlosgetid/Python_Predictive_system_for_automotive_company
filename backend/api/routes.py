@@ -7,9 +7,11 @@ import os
 
 # Importar lógica BD
 from backend.database.db_utils import get_db_engine, save_dataframe_to_db, get_model_metrics_history
+
+from backend.services.ingestion_service import ingest_dataframe_to_db, process_excel_file_from_disk
 # --- INICIO DE AGREGADO ---
 # Importamos el Servicio de Ingesta (HU-010)
-from backend.services.ingestion_service import ingest_dataframe_to_db, process_excel_file_from_disk
+from backend.services.auth_service import authenticate_user
 # --- FIN DE AGREGADO ---
 
 # Importamos la lógica de predicción...
@@ -333,3 +335,31 @@ def get_metrics_history():
     except Exception as e:
         logging.error(f"Error obteniendo historial de métricas: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+    
+# --- Endpoint Autenticación (Login) ---
+@api_bp.route('/login', methods=['POST'])
+def login():
+    """
+    Recibe credenciales JSON (username, password).
+    Valida contra la BD y devuelve datos del usuario si es correcto.
+    """
+    try:
+        data = request.get_json()
+        if not data or 'username' not in data or 'password' not in data:
+            return jsonify({"error": "Faltan credenciales"}), 400
+
+        user = authenticate_user(data['username'], data['password'])
+
+        if user:
+            # Login Exitoso
+            return jsonify({
+                "message": "Login exitoso",
+                "user": user  # Retorna {id, username, nombre, rol}
+            }), 200
+        else:
+            # Login Fallido
+            return jsonify({"error": "Usuario o contraseña incorrectos"}), 401
+
+    except Exception as e:
+        logging.error(f"Error en /login: {e}", exc_info=True)
+        return jsonify({"error": "Error interno del servidor"}), 500

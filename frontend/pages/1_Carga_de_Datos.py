@@ -5,23 +5,17 @@ import os
 import logging 
 import sys
 from pathlib import Path
-from io import BytesIO # Para leer el archivo en memoria para la vista previa
+from io import BytesIO
+
+from frontend.config import get_setting # Para leer el archivo en memoria para la vista previa
 
 
-root_path = Path(__file__).parent.parent.parent
-sys.path.append(str(root_path))
-
-try:
-    # Importamos get_setting para leer el valor actualizado en cada recarga
-    from frontend.config import get_setting, URL_UPLOAD
-except ImportError as e:
-    logging.error(f"Error importando config: {e}. Usando valores por defecto.")
-    # Función fallback si falla el import para no romper la app
-    def get_setting(key, default): return default
-    URL_UPLOAD = "http://127.0.0.1:5000/upload"
-
-# Configuración básica de logging
-logging.basicConfig(level=logging.INFO)
+# --- PROTECCIÓN DE PÁGINA (Login Required) ---
+# Si el usuario no está autenticado, mostramos error y detenemos la ejecución.
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+    st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
+    st.stop() # ¡Importante! Esto evita que se cargue el resto de la página
+# ---------------------------------------------
 
 # --- LEER CONFIGURACIÓN DINÁMICA ---
 # Leemos el estado actual desde el JSON cada vez que se carga la página

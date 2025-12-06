@@ -1,82 +1,124 @@
 import streamlit as st
+import requests
+import time
+import os
+import sys
+from pathlib import Path
 
-# --- Configuración de la Página ---
-# Esta debe ser la PRIMERA llamada de Streamlit en el script.
+# --- CONFIGURACIÓN DE RUTAS (Path Fix) ---
+# Agregamos la raíz del proyecto al sys.path para importar config correctamente
+# frontend/Inicio.py -> parent = frontend -> parent = raiz
+root_path = Path(__file__).parent.parent
+sys.path.append(str(root_path))
+
+# --- IMPORTACIÓN DE CONFIGURACIÓN ---
+try:
+    from frontend.config import URL_LOGIN
+except ImportError:
+    # Fallback por si falla la importación
+    BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
+    BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
+    URL_LOGIN = f"http://{BACKEND_HOST}:{BACKEND_PORT}/login"
+
+# --- CONFIGURACIÓN DE PÁGINA ---
+# Debe ser la primera instrucción de Streamlit
 st.set_page_config(
-    page_title="Sistema Predictivo | Inicio",
-    page_icon="📊",  # Ícono para la pestaña del navegador
-    layout="wide"    # Usar el ancho completo de la página
+    page_title="Sistema Predictivo - Login",
+    page_icon="🚗",
+    layout="centered", # Centrado para el Login
+    initial_sidebar_state="collapsed" # Ocultar sidebar en login
 )
 
-# --- Barra Lateral (Sidebar) ---
-# Contenido profesional y neutral
-with st.sidebar:
-    st.header("Acerca de la Aplicación")
-    st.markdown("""
-    Esta plataforma utiliza modelos de Machine Learning para 
-    generar pronósticos de demanda y optimizar la gestión 
-    de inventario.
-    """)
+# --- GESTIÓN DE ESTADO DE SESIÓN ---
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user = None
+
+# --- FUNCIÓN DE LOGIN ---
+def login_screen():
+    st.title("🔐 Iniciar Sesión")
+    st.markdown("### Sistema Predictivo de Gestión de Inventarios")
+    st.markdown("Ingrese sus credenciales corporativas para continuar.")
     
-    st.divider() # Un separador visual
+    with st.form("login_form"):
+        username = st.text_input("Usuario", placeholder="Ej. lfernandez")
+        password = st.text_input("Contraseña", type="password")
+        
+        submitted = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
+        
+        if submitted:
+            if not username or not password:
+                st.error("⚠️ Por favor ingrese usuario y contraseña.")
+                return
+
+            try:
+                with st.spinner("Verificando credenciales..."):
+                    # Llamada al API de Autenticación
+                    payload = {"username": username, "password": password}
+                    response = requests.post(URL_LOGIN, json=payload, timeout=5)
+                    
+                    if response.status_code == 200:
+                        # Login Exitoso
+                        data = response.json()
+                        st.session_state.authenticated = True
+                        st.session_state.user = data.get("user")
+                        
+                        st.success(f"¡Bienvenido {st.session_state.user['nombre']}!")
+                        time.sleep(0.5)
+                        st.rerun() # Recargar para mostrar el Dashboard
+                        
+                    elif response.status_code == 401:
+                        st.error("❌ Usuario o contraseña incorrectos.")
+                    else:
+                        st.error(f"Error del servidor: {response.text}")
+            
+            except requests.exceptions.ConnectionError:
+                st.error("❌ No se pudo conectar al servidor Backend. Verifique que esté corriendo.")
+            except Exception as e:
+                st.error(f"Ocurrió un error inesperado: {e}")
+
+# --- FUNCIÓN DE DASHBOARD (App Principal) ---
+def dashboard_screen():
+    # Cambiar layout visualmente (hack)
+    # Nota: st.set_page_config solo se puede llamar una vez, por eso manejamos el contenido.
     
-    st.info("Versión 1.0 (MVP)")
+    # Sidebar con Info del Usuario
+    with st.sidebar:
+        st.title(f"👤 {st.session_state.user['nombre']}")
+        st.caption(f"Rol: **{st.session_state.user['rol']}**")
+        st.divider()
+        
+        if st.button("Cerrar Sesión", type="secondary", use_container_width=True):
+            st.session_state.authenticated = False
+            st.session_state.user = None
+            st.rerun()
+
+    # Contenido Principal
+    st.write(f"# Hola, {st.session_state.user['nombre'].split()[0]} 👋")
+    st.markdown(f"Has ingresado como: **{st.session_state.user['rol']}**")
+    st.divider()
     
-    st.divider() # Un separador visual
+    st.markdown(
+        """
+        Bienvenido al sistema de optimización de inventarios **Teo Autopartes**.
+        Seleccione una opción en el menú lateral según su perfil:
+        """
+    )
     
-    # Asumiendo el nombre de la empresa de la tesis, si no, se puede cambiar
-    st.caption("© 2025 Importaciones Centrales Teo. \nTodos los derechos reservados.")
-
-# --- Contenido Principal de la Página ---
-
-# 1. Título y Resumen (Profesionalizado)
-st.title("Sistema Predictivo para la Gestión de Inventarios 📊")
-st.subheader("Plataforma de Optimización de Stock y Pronóstico de Demanda") # <-- Texto actualizado
-st.markdown("""
-Esta herramienta aplica un modelo híbrido de Machine Learning (MLP y XGBoost) para pronosticar la demanda futura de productos a nivel de SKU. 
-El objetivo es resolver la problemática de gestión de inventarios ineficiente (sobrestock y quiebres de stock), reemplazando el análisis manual por un pronóstico estadístico basado en datos transaccionales.
-""") # <-- Texto actualizado
-
-st.divider()
-
-# 2. Guía de Uso
-st.header("Guía de Uso del Sistema")
-st.markdown("Siga estos pasos para utilizar la aplicación:")
-
-# (Paso 1 no se modifica)
-with st.container(border=True):
-    st.subheader("📄 Paso 1: Carga de Datos")
-    st.markdown("""
-    Navegue a la página **'Carga_de_Datos'** en la barra lateral. 
+    # Tarjetas de Acceso Rápido
+    col1, col2 = st.columns(2)
     
-    Aquí podrá subir los archivos Excel transaccionales (ej. `Factura_Importacion_PLUS_*.xlsx`). El sistema leerá automáticamente la hoja **'Detalle'** y guardará los datos históricos en la base de datos.
-    """)
-    st.warning("Nota: Este paso solo es necesario si se dispone de nuevos datos históricos.")
+    with col1:
+        st.info("📤 **Carga de Datos**\n\nSubida de históricos y gestión de archivos transaccionales.")
+        st.success("📈 **Predicción**\n\nGeneración de pronósticos de demanda por producto.")
+        
+    with col2:
+        st.warning("⚙️ **Administración**\n\nRe-entrenamiento del modelo, monitoreo de métricas y configuración.")
+        
+    st.caption("v1.2.0 - Sprint 2 Release")
 
-st.write("") # Añadir un espacio
-
-# --- INICIO DE LA MODIFICACIÓN ---
-# Paso 2 (Actualizado para redirigir a la nueva página de admin)
-with st.container(border=True):
-    st.subheader("🤖 Paso 2: Administración y Entrenamiento")
-    st.markdown("""
-    Navegue a la página **'Administracion'** en la barra lateral. 
-    
-    Desde esta sección segura, un administrador puede iniciar el proceso de **re-entrenamiento del modelo**. El sistema utilizará todos los datos cargados hasta la fecha para generar y activar los nuevos modelos de predicción.
-    """)
-    st.warning("""
-    **Advertencia:** Esta acción solo debe ser ejecutada por personal autorizado. 
-    El re-entrenamiento puede tardar varios minutos y reemplazará los modelos de predicción actuales en vivo.
-    """)
-# --- FIN DE LA MODIFICACIÓN ---
-
-st.write("") # Añadir un espacio
-
-# (Paso 3 no se modifica)
-with st.container(border=True):
-    st.subheader("📈 Paso 3: Visualización de Predicción")
-    st.markdown("""
-    Navegue a la página **'Visualizacion_de_Prediccion'** en la barra lateral.
-    
-    Ingrese un **SKU (ID de Producto)** y una **fecha futura** para generar un pronóstico de demanda en unidades. Podrá ver la predicción junto al historial de ventas de ese producto.
-    """)
+# --- CONTROLADOR PRINCIPAL ---
+if not st.session_state.authenticated:
+    login_screen()
+else:
+    dashboard_screen()
