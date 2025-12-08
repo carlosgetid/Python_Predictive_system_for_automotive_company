@@ -5,7 +5,9 @@ numpy
 scikit-learn
 tensorflow
 xgboost
-mysql-connector-python
+#mysql-connector-python
+#psycopg2-binary
+pg8000
 SQLAlchemy
 flask-cors
 joblib
