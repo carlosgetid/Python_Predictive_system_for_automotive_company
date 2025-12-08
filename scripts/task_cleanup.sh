@@ -33,14 +33,15 @@ else
     echo "[$(date)] ⚠️  Directorio models/ no encontrado." >> "$LOG_FILE"
 fi
 
-# 2. Borrar Datos de MySQL
-echo "[$(date)] Iniciando limpieza de Base de Datos..." >> "$LOG_FILE"
+# 2. Borrar Datos de PostgreSQL (ACTUALIZADO)
+echo "[$(date)] Iniciando limpieza de Base de Datos (PostgreSQL)..." >> "$LOG_FILE"
 
 if [ ! -f "$PYTHON_EXEC" ]; then
     echo "[$(date)] ❌ ERROR CRÍTICO: No se encontró el entorno virtual." >> "$LOG_FILE"
     exit 1
 fi
 
+# Llamada al script Python que contiene la lógica TRUNCATE CASCADE para Postgres
 "$PYTHON_EXEC" "$SCRIPT_DIR/utils_reset_db.py" >> "$LOG_FILE" 2>&1
 
 if [ $? -eq 0 ]; then
