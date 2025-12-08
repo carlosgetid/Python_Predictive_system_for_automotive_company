@@ -21,7 +21,7 @@ SCALER_PATH = os.path.join(ARTIFACTS_DIR, "min_max_scaler.joblib")
 # --- Tarea HU-005.T1: Limpieza de Datos (Revertida a MVP) ---
 def clean_data(df):
     """
-    Realiza la limpieza básica para los datos de 'ventas_historicas'.
+    Realiza la limpieza básica para los datos de 'ventas_detalle'.
     - Asegura que la fecha sea datetime.
     - Elimina duplicados.
     - Asegura que cantidad_vendida sea positiva.
@@ -158,7 +158,7 @@ def scale_features(df, fit_scaler=False):
 def get_and_preprocess_data(for_training=True):
     """
     Orquestador principal (MVP):
-    1. Obtiene datos de 'ventas_historicas'.
+    1. Obtiene datos de 'ventas_detalle'.
     2. Limpia.
     3. Crea características de fecha.
     4. Codifica id_producto (T2).
@@ -172,13 +172,14 @@ def get_and_preprocess_data(for_training=True):
     if engine is None: return None
     # Asegúrate que la tabla correcta existe
     try:
-        df = fetch_all_data(engine, table_name="ventas_historicas")
+        # <-- CAMBIO: Nombre de tabla actualizado a 'ventas_detalle'
+        df = fetch_all_data(engine, table_name="ventas_detalle")
     except Exception as e:
-        logging.error(f"Error al leer de la base de datos (tabla 'ventas_historicas'): {e}")
+        logging.error(f"Error al leer de la base de datos (tabla 'ventas_detalle'): {e}")
         return None
 
     if df is None or df.empty:
-        logging.error("No se encontraron datos en 'ventas_historicas' o la tabla está vacía.")
+        logging.error("No se encontraron datos en 'ventas_detalle' o la tabla está vacía.")
         return None
 
     # 2. Limpieza (T1)
@@ -318,4 +319,3 @@ if __name__ == "__main__":
             print("\ny_train está vacío después de la división.")
     else:
         print("\nEl preprocesamiento falló o no generó datos.")
-

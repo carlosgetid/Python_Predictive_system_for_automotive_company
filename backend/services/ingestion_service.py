@@ -111,7 +111,8 @@ def ingest_dataframe_to_db(df: pd.DataFrame, source_name: str, engine: Optional[
 
     # 3. Guardado (Carga)
     try:
-        success, db_msg = save_dataframe_to_db(df_clean, "ventas_historicas", engine)
+        # <-- CAMBIO: Nombre de tabla actualizado a 'ventas_detalle'
+        success, db_msg = save_dataframe_to_db(df_clean, "ventas_detalle", engine)
         if success:
             return True, f"Procesamiento exitoso. {db_msg}", len(df_clean)
         else:

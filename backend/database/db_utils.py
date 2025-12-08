@@ -60,7 +60,7 @@ def save_dataframe_to_db(df, table_name, engine):
         logger.error(f"Error al guardar datos en la BD: {e}")
         return False, f"Error al guardar en la BD: {e}"
 
-def fetch_all_data(engine, table_name="ventas_historicas"):
+def fetch_all_data(engine, table_name="ventas_detalle"): # <-- CAMBIO 1: Nombre de tabla actualizado
     """
     Obtiene todos los datos de una tabla.
     """
@@ -82,7 +82,8 @@ def save_model_metric(metrics: dict, engine):
     try:
         data = metrics.copy()
         data['fecha_registro'] = datetime.now()
-        pd.DataFrame([data]).to_sql('model_metrics', con=engine, if_exists='append', index=False)
+        # <-- CAMBIO 2: Tabla 'entrenamiento'
+        pd.DataFrame([data]).to_sql('entrenamiento', con=engine, if_exists='append', index=False)
         return True
     except Exception as e:
         logger.error(f"Error al guardar métricas: {e}")
@@ -91,7 +92,8 @@ def save_model_metric(metrics: dict, engine):
 def get_model_metrics_history(engine):
     if engine is None: return pd.DataFrame()
     try:
-        query = "SELECT * FROM model_metrics ORDER BY fecha_registro DESC"
+        # <-- CAMBIO 3: Tabla 'entrenamiento'
+        query = "SELECT * FROM entrenamiento ORDER BY fecha_registro DESC"
         return pd.read_sql(query, con=engine)
     except Exception as e:
         logger.warning(f"No se pudo leer historial de métricas: {e}")
