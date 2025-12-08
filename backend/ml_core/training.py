@@ -34,7 +34,8 @@ def load_data_from_db():
         return pd.DataFrame()
 
     # Consulta optimizada: solo columnas necesarias
-    query = "SELECT id_producto, fecha, cantidad_vendida FROM ventas_historicas ORDER BY fecha ASC"
+    # <-- CAMBIO: Nombre de tabla actualizado a 'ventas_detalle'
+    query = "SELECT id_producto, fecha, cantidad_vendida FROM ventas_detalle ORDER BY fecha ASC"
     try:
         df = pd.read_sql(query, engine)
         logging.info(f"Datos cargados de BD: {len(df)} registros.")
@@ -355,4 +356,3 @@ if __name__ == "__main__":
     import json
     # Imprimir el JSON de forma legible
     print(json.dumps(results, indent=2))
-

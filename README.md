@@ -23,7 +23,7 @@ This project aims to replace this inefficient manual process with an automated, 
 The software implements an end-to-end ML pipeline:
 
 1.  **Data Ingestion:** Allows users to upload historical sales data, either as pre-processed CSV files or directly using the company's Excel reports (`Factura_Importacion_PLUS_*.xlsx`), automatically extracting relevant transactional details from the 'Detalle' sheet.
-2.  **Data Storage:** Cleans and stores the transactional data (SKU, Date, Quantity Sold) in a structured MySQL database (`ventas_historicas` table).
+2.  **Data Storage:** Cleans and stores the transactional data (SKU, Date, Quantity Sold) in a structured PostgreSQL database (`ventas_detalle` table).
 3.  **ML Pipeline:**
     * **Preprocessing (`preprocessing.py`):** Reads data from the database, performs cleaning, generates date-based features (month, day, day of week, year), encodes categorical features (`id_producto`/SKU using `LabelEncoder`), and scales numerical features (`MinMaxScaler`).
     * **Training (`training.py`):** Trains two regression models (XGBoost and a Multi-Layer Perceptron - MLP using TensorFlow/Keras) to predict `cantidad_vendida` (quantity sold) based on the preprocessed features. Saves the trained models and transformers (encoder, scaler) as artifacts in the `models/` directory.
@@ -40,7 +40,7 @@ The software implements an end-to-end ML pipeline:
 * **Frontend:** Streamlit
 * **Machine Learning:** Scikit-learn (`LabelEncoder`, `MinMaxScaler`, `train_test_split`), TensorFlow (Keras for MLP), XGBoost
 * **Data Handling:** Pandas, NumPy
-* **Database:** MySQL, SQLAlchemy, mysql-connector-python
+* **Database:** PostgreSQL, SQLAlchemy, pg8000
 * **Serialization:** Joblib (for Scikit-learn objects)
 * **Excel Reading:** openpyxl
 
@@ -89,22 +89,29 @@ The software implements an end-to-end ML pipeline:
     ```bash
     pip install -r requirements.txt
     ```
-4.  **Setup MySQL Database:**
-    * Ensure you have a MySQL server installed and running.
-    * Create a database (e.g., `inventario_automotriz_db`).
-    * Configure the database connection string in `backend/config.py` (e.g., `DATABASE_URI = "mysql+mysqlconnector://user:password@host/inventario_automotriz_db"`). **Important:** Use environment variables or a secure method for credentials in production; do not commit them directly.
+4.  4.  **Setup PostgreSQL Database:**
+    * Ensure you have a PostgreSQL server installed and running (v16 recommended).
+    * Create a dedicated user and database:
+        ```sql
+        CREATE USER teo_user WITH PASSWORD 'teo_password_segura';
+        CREATE DATABASE teo_db OWNER teo_user;
+        ```
+    * Configure the database connection string in `backend/config.py` using the `pg8000` driver:
+      `DATABASE_URI = "postgresql+pg8000://teo_user:teo_password_segura@localhost:5432/teo_db"`
+    * **Important:** Use environment variables for credentials in production.
     * Create the necessary table by executing the following SQL command within your database:
         ```sql
-        USE inventario_automotriz_db;
-        CREATE TABLE ventas_historicas (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+        -- Connect to database: \c teo_db
+        CREATE TABLE ventas_detalle (
+            id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             id_producto VARCHAR(255) NOT NULL,
             fecha DATE NOT NULL,
             cantidad_vendida INT NOT NULL,
-            fecha_carga TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_producto (id_producto),
-            INDEX idx_fecha (fecha)
+            fecha_carga TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        -- Indexes for performance
+        CREATE INDEX idx_producto ON ventas_detalle (id_producto);
+        CREATE INDEX idx_fecha ON ventas_detalle (fecha);
         ```
 
 ## 7. Data Requirements
@@ -140,12 +147,12 @@ Open the Streamlit URL in your browser to interact with the application.
 To perform a clean test run from scratch, simulating a fresh deployment or evaluation:
 
 1.  **Clean Database Records:**
-    * Connect to your MySQL database (e.g., via `mysql` command line, DBeaver).
+    * Connect to your PostgreSQL database (e.g., via `psql` or pgAdmin).
     * Execute:
         ```sql
-        USE inventario_automotriz_db;
-        TRUNCATE TABLE ventas_historicas;
+        TRUNCATE TABLE ventas_detalle RESTART IDENTITY CASCADE;
         ```
+
 2.  **Clear Old Artifacts/Models:**
     * In your project's root directory via terminal:
         * **Mac/Linux:** `rm -rf models/*`

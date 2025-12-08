@@ -215,7 +215,8 @@ def get_history():
             return jsonify({"error": "Error interno del servidor (BD)"}), 500
 
         # Consulta segura
-        query = "SELECT fecha, cantidad_vendida FROM ventas_historicas WHERE id_producto = %s ORDER BY fecha ASC"
+        # <-- CAMBIO: Nombre de tabla actualizado a 'ventas_detalle'
+        query = "SELECT fecha, cantidad_vendida FROM ventas_detalle WHERE id_producto = %s ORDER BY fecha ASC"
 
         # Usar try-except específico para la consulta
         try:

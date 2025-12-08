@@ -18,14 +18,16 @@ def reset_tables():
             
             # --- CAMBIO CRÍTICO: Sintaxis PostgreSQL ---
             # Usamos CASCADE para borrar datos dependientes y RESTART IDENTITY para los IDs
-            conn.execute(text("TRUNCATE TABLE ventas_historicas RESTART IDENTITY CASCADE;"))
+            # <-- CAMBIO: Nombre de tabla actualizado a 'ventas_detalle'
+            conn.execute(text("TRUNCATE TABLE ventas_detalle RESTART IDENTITY CASCADE;"))
             
-            # Nota: 'model_metrics' se crea automáticamente al entrenar, 
+            # Nota: 'entrenamiento' se crea automáticamente al entrenar, 
             # pero si existe, la limpiamos. Usamos un bloque try/except por si no existe aún.
             try:
-                conn.execute(text("TRUNCATE TABLE model_metrics RESTART IDENTITY CASCADE;"))
+                # <-- CAMBIO: Nombre de tabla actualizado a 'entrenamiento'
+                conn.execute(text("TRUNCATE TABLE entrenamiento RESTART IDENTITY CASCADE;"))
             except Exception:
-                print("ℹ️  Tabla model_metrics no existía (no pasa nada).")
+                print("ℹ️  Tabla entrenamiento no existía (no pasa nada).")
 
             conn.commit()
             print("✅ Tablas limpiadas exitosamente.")
