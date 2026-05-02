@@ -18,5 +18,5 @@ while true; do
     response=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL")
     
     echo "[$(date)] Respuesta: $response" >> "$LOG_FILE"
-    sleep 60
+    sleep 30
 done

@@ -24,10 +24,10 @@ except ImportError:
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="Teo Analytics - Acceso",
+    page_title="Teo Analytics - Inicio",
     page_icon="🚗",
     layout="centered",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # --- GESTIÓN DE ESTADO DE SESIÓN ---
@@ -35,86 +35,7 @@ if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user = None
 
-# --- FUNCIÓN DE LOGIN (CORREGIDA) ---
-def login_screen():
-    # 1. Inyectar CSS Global
-    st.markdown(get_app_css(), unsafe_allow_html=True)
-    
-    # 2. CSS Local para la Tarjeta
-    st.markdown("""
-        <style>
-            /* Convertir el formulario nativo en la Login Card */
-            [data-testid="stForm"] {
-                background-color: #FFFFFF;
-                border: 1px solid #E2E8F0;
-                border-radius: 16px;
-                padding: 40px;
-                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-                border-top: 6px solid #0F2942;
-                max-width: 450px;
-                margin: 0 auto;
-            }
-            /* --- NUEVO: Ocultar completamente la Sidebar y su botón --- */
-            [data-testid="stSidebar"] { display: none; }
-            [data-testid="collapsedControl"] { display: none; }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("<div style='height: 5vh;'></div>", unsafe_allow_html=True)
-    
-    with st.form("login_form"):
-        st.markdown("""
-            <div style="text-align: center; margin-bottom: 25px;">
-                <div class="login-header">🔐 Iniciar Sesión</div>
-                <div class="login-subtext">
-                    <b>Teo Analytics</b><br>Plataforma de Inteligencia Automotriz
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        username = st.text_input("Usuario Corporativo", placeholder="Ej. lfernandez")
-        password = st.text_input("Contraseña", type="password", placeholder="••••••••")
-        
-        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-        
-        submitted = st.form_submit_button("Acceder a la Plataforma", type="primary", use_container_width=True)
-        
-        # --- [RESTAURADO] LÓGICA DE AUTENTICACIÓN ---
-        if submitted:
-            if not username or not password:
-                st.warning("⚠️ Ingrese sus credenciales para continuar.")
-                return
-
-            try:
-                with st.spinner("Validando acceso..."):
-                    payload = {"username": username, "password": password}
-                    response = requests.post(URL_LOGIN, json=payload, timeout=5)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        st.session_state.authenticated = True
-                        st.session_state.user = data.get("user")
-                        
-                        st.toast(f"¡Bienvenido, {st.session_state.user['nombre']}!", icon="👋")
-                        time.sleep(0.8)
-                        st.rerun()
-                        
-                    elif response.status_code == 401:
-                        st.error("Credenciales incorrectas. Verifique e intente nuevamente.")
-                    else:
-                        st.error(f"Error de conexión ({response.status_code})")
-            
-            except requests.exceptions.ConnectionError:
-                st.error("❌ Servidor no disponible. Contacte a soporte TI.")
-            except Exception as e:
-                st.error(f"Error inesperado: {e}")
-        # ---------------------------------------------
-
-    st.markdown("""
-        <div style="text-align: center; margin-top: 30px; color: #94A3B8; font-size: 12px;">
-            © 2024 Teo Autopartes S.A.C. | v2.0 Enterprise Release
-        </div>
-    """, unsafe_allow_html=True)
+# --- (La función login_screen fue movida a frontend/pages/login.py) ---
 
 # --- FUNCIÓN DE DASHBOARD ---
 def dashboard_screen():
@@ -167,8 +88,25 @@ def dashboard_screen():
         </div>
         """, unsafe_allow_html=True)
 
+# --- DEFINICIÓN DE PÁGINAS ---
+def root_redirect():
+    if not st.session_state.authenticated:
+        st.switch_page(page_login)
+    else:
+        st.switch_page(page_inicio)
+
+page_root = st.Page(root_redirect, title="App", default=True)
+page_inicio = st.Page(dashboard_screen, title="Inicio", url_path="inicio")
+page_carga = st.Page("pages/1_Carga_de_Datos.py", title="Carga de Datos")
+page_admin = st.Page("pages/2_Administracion.py", title="Administracion")
+page_vis = st.Page("pages/3_Visualizacion_de_Prediccion.py", title="Visualizacion de Prediccion")
+page_config = st.Page("pages/4_Configuracion.py", title="Configuracion")
+page_login = st.Page("pages/login.py", title="Login", url_path="login")
+
 # --- CONTROLADOR PRINCIPAL ---
 if not st.session_state.authenticated:
-    login_screen()
+    pg = st.navigation([page_root, page_login])
+    pg.run()
 else:
-    dashboard_screen()
+    pg = st.navigation([page_root, page_inicio, page_carga, page_admin, page_vis, page_config])
+    pg.run()
