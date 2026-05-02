@@ -36,7 +36,6 @@ def get_app_css():
         /* Ocultar menú hamburguesa, footer y barra superior de colores */
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
-        header {visibility: hidden;}
         [data-testid="stDecoration"] {display: none;}
         
         /* Eliminar padding excesivo superior */
@@ -63,6 +62,16 @@ def get_app_css():
         /* Separadores en Sidebar */
         [data-testid="stSidebar"] hr {
             border-color: #475569 !important;
+        }
+
+        /* Ocultar página de login en el sidebar */
+        [data-testid="stSidebarNav"] a[href*="login"] {
+            display: none !important;
+        }
+
+        /* Ocultar página Root (Redirección) en el sidebar */
+        [data-testid="stSidebarNav"] ul li:first-child {
+            display: none !important;
         }
 
         /* --- 5. COMPONENTE: TARJETA DE LOGIN (Clases Custom) --- */
