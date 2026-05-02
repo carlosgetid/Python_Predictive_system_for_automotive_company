@@ -70,8 +70,7 @@ with st.form(key="prediction_form_mvp_redesign"):
 
         # Campo para el ID del Producto
         id_producto = st.text_input(
-            label="ID del Producto (SKU)",
-            placeholder="Ej. SKU-2021-00010-3398" # Usar un ejemplo válido
+            label="ID del Producto (SKU)"
         )
 
         # Campo para la Fecha

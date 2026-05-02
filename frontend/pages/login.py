@@ -65,8 +65,8 @@ with st.form("login_form"):
         </div>
     """, unsafe_allow_html=True)
     
-    username = st.text_input("Usuario Corporativo", placeholder="Ej. lfernandez")
-    password = st.text_input("Contraseña", type="password", placeholder="••••••••")
+    username = st.text_input("Usuario Corporativo")
+    password = st.text_input("Contraseña", type="password")
     
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
     
