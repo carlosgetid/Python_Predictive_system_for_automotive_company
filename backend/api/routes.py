@@ -14,6 +14,35 @@ from backend.services.auth_service import authenticate_user
 from backend.services.alert_service import run_daily_alert_analysis
 from backend.services.email_service import send_alerts_summary
 import threading
+import jwt
+from functools import wraps
+from pydantic import ValidationError
+from backend.api.schemas import AlertConfigCreate
+from backend.database.db_utils import get_alert_configs, upsert_alert_config
+
+SECRET_KEY = "tu_clave_secreta_super_segura" # Para MVP
+
+def require_role(roles):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            token = None
+            if 'Authorization' in request.headers:
+                parts = request.headers['Authorization'].split()
+                if len(parts) == 2 and parts[0] == 'Bearer':
+                    token = parts[1]
+            if not token:
+                return jsonify({"error": "Token faltante o inválido"}), 401
+            try:
+                data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+                if data['rol'] not in roles:
+                    return jsonify({"error": "No tienes permisos para realizar esta acción"}), 403
+                request.user = data
+            except Exception as e:
+                return jsonify({"error": f"Token inválido: {e}"}), 401
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 # --- FIN DE AGREGADO ---
 
 # Importamos la lógica de predicción...
@@ -354,11 +383,21 @@ def login():
         user = authenticate_user(data['username'], data['password'])
 
         if user:
+            # Generate JWT
+            token = jwt.encode({
+                'id': user['id'],
+                'username': user['username'],
+                'rol': user['rol'],
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+            }, SECRET_KEY, algorithm="HS256")
+            
             # Login Exitoso
             return jsonify({
                 "message": "Login exitoso",
-                "user": user  # Retorna {id, username, nombre, rol}
+                "user": user,
+                "token": token
             }), 200
+        else:
             # Login Fallido
             return jsonify({"error": "Usuario o contraseña incorrectos"}), 401
 
@@ -476,5 +515,48 @@ def test_email():
             return jsonify({"error": "Falló el envío. Verifica las credenciales y el puerto SMTP en los logs del servidor."}), 500
     except Exception as e:
         logging.error(f"Error en POST /api/config/test-email: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+# --- INICIO DE AGREGADO: Configuración de Alertas (HU-012) ---
+@api_bp.route('/api/v1/alerts/config', methods=['GET'])
+def get_alert_config_endpoint():
+    """Obtiene las configuraciones de alertas."""
+    try:
+        skip = int(request.args.get('skip', 0))
+        limit = int(request.args.get('limit', 100))
+        engine = get_db_engine()
+        configs = get_alert_configs(engine, skip, limit)
+        return jsonify(configs), 200
+    except Exception as e:
+        logging.error(f"Error en GET /api/v1/alerts/config: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v1/alerts/config', methods=['POST'])
+@require_role(["Gerente Administración", "Gerente General", "Jefa Almacén", "Analista Logística"])
+def upsert_alert_config_endpoint():
+    """Crea o actualiza la configuración de alerta para un producto."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        # Validar con Pydantic
+        config_schema = AlertConfigCreate(**data)
+        
+        # Enriquecer con usuario que actualiza
+        config_dict = config_schema.model_dump()
+        config_dict['updated_by'] = request.user.get('username', 'Sistema')
+        
+        engine = get_db_engine()
+        success = upsert_alert_config(engine, config_dict)
+        if success:
+            return jsonify({"message": "Configuración de alerta actualizada exitosamente"}), 200
+        else:
+            return jsonify({"error": "Error interno al actualizar la configuración"}), 500
+            
+    except ValidationError as e:
+        return jsonify({"error": "Error de validación", "details": e.errors()}), 400
+    except Exception as e:
+        logging.error(f"Error en POST /api/v1/alerts/config: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 # --- FIN DE AGREGADO ---

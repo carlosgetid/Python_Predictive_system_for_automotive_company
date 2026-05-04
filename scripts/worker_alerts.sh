@@ -11,7 +11,7 @@ mkdir -p "$SCRIPT_DIR/logs"
 echo "[$(date)] --- Iniciando Worker de Alertas (3 min) ---" >> "$LOG_FILE"
 
 while true; do
-    echo "[$(date)] Ejecutando verificación de Alertas (HU-007)..." >> "$LOG_FILE"
+    echo "[$(date)] Ejecutando verificación de Alertas (HU-007 & HU-012)..." >> "$LOG_FILE"
     
     # Hacemos la peticion POST en background
     response=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL")

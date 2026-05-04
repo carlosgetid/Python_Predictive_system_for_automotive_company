@@ -102,33 +102,54 @@ class SmtpGmailProvider(EmailProvider):
             logger.info("No hay alertas para enviar.")
             return False
 
+        # Agrupar alertas por email de notificación (HU-012)
+        alerts_by_email = {}
+        for alert in alerts_data:
+            dest = alert.get("email_notificacion") or final_recipient
+            if dest:
+                if dest not in alerts_by_email:
+                    alerts_by_email[dest] = []
+                alerts_by_email[dest].append(alert)
+
+        if not alerts_by_email:
+            logger.warning("No se pudo determinar ningún destinatario válido para las alertas.")
+            return False
+
         try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"⚠️ Resumen de Alertas de Inventario ({len(alerts_data)} nuevas)"
-            msg["From"] = email_remitente
-            msg["To"] = final_recipient
-
-            html = self._build_html_content(alerts_data)
-            part = MIMEText(html, "html")
-            msg.attach(part)
-
             # Iniciar conexión SMTP
             server = smtplib.SMTP(smtp_host, smtp_port)
-            server.ehlo()  # Identificarse ante el servidor
-            
-            # CRUCIAL: Iniciar TLS de forma segura antes del login
+            server.ehlo()
             server.starttls()
             
             if smtp_user and smtp_pass:
                 server.login(smtp_user, smtp_pass)
             else:
                 logger.warning("Credenciales SMTP no configuradas. El envío podría fallar.")
+                
+            success_count = 0
             
-            server.sendmail(msg["From"], msg["To"], msg.as_string())
+            # Enviar a cada destinatario sus alertas correspondientes
+            for dest, alerts in alerts_by_email.items():
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = f"⚠️ Resumen de Alertas de Inventario ({len(alerts)} nuevas)"
+                msg["From"] = email_remitente
+                msg["To"] = dest
+
+                html = self._build_html_content(alerts)
+                part = MIMEText(html, "html")
+                msg.attach(part)
+                
+                try:
+                    server.sendmail(msg["From"], msg["To"], msg.as_string())
+                    logger.info(f"Correo de resumen enviado vía SMTP a {dest} con {len(alerts)} alertas.")
+                    success_count += 1
+                except Exception as e:
+                    logger.error(f"Error al enviar a {dest}: {e}")
+                    
             server.quit()
-            
-            logger.info(f"Correo de resumen de alertas enviado vía SMTP a {final_recipient}")
-            return True
+            return success_count > 0
+
+
 
         except smtplib.SMTPAuthenticationError as e:
             logger.error(f"Error de Autenticación SMTP (Verifica el App Password de Gmail o la BD): {e}")
