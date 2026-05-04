@@ -11,4 +11,6 @@ pg8000
 SQLAlchemy
 flask-cors
 joblib
-openpyxl
+openpyxlpydantic
+email-validator
+PyJWT

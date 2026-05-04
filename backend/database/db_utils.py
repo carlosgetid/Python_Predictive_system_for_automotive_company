@@ -61,6 +61,18 @@ def initialize_db(engine):
                 );
             """))
             conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS alert_configurations (
+                    id SERIAL PRIMARY KEY,
+                    producto_id VARCHAR(255) NOT NULL UNIQUE,
+                    umbral_minimo INT NOT NULL,
+                    umbral_sobreabastecimiento INT NOT NULL,
+                    email_notificacion VARCHAR(255) NOT NULL,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    updated_by VARCHAR(255),
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+            conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS configuracion_sistema (
                     id SERIAL PRIMARY KEY,
                     smtp_host VARCHAR(255) DEFAULT 'smtp.gmail.com',
@@ -244,6 +256,68 @@ def update_alert_status(alert_id: str, status: str, engine):
                 return False
     except Exception as e:
         logger.error(f"Error al actualizar estado de alerta {alert_id}: {e}", exc_info=True)
+        return False
+
+# --- FUNCIONES DE CONFIGURACIÓN DE ALERTAS (HU-012) ---
+
+def get_alert_configs(engine, skip: int = 0, limit: int = 100):
+    """
+    Obtiene las configuraciones de alertas con paginación.
+    """
+    if engine is None: return []
+    try:
+        query = text("""
+            SELECT id, producto_id, umbral_minimo, umbral_sobreabastecimiento, 
+                   email_notificacion, is_active, updated_by, updated_at
+            FROM alert_configurations
+            ORDER BY updated_at DESC
+            OFFSET :skip LIMIT :limit
+        """)
+        with engine.connect() as conn:
+            result = conn.execute(query, {"skip": skip, "limit": limit})
+            configs = [dict(row._mapping) for row in result]
+            for config in configs:
+                if 'updated_at' in config and config['updated_at']:
+                    config['updated_at'] = str(config['updated_at'])
+            return configs
+    except Exception as e:
+        logger.error(f"Error al obtener configuraciones de alertas: {e}", exc_info=True)
+        return []
+
+def upsert_alert_config(engine, config_data: dict):
+    """
+    Inserta o actualiza la configuración de alerta para un producto_id.
+    """
+    if engine is None: return False
+    try:
+        with engine.begin() as conn:
+            query = text("""
+                INSERT INTO alert_configurations (
+                    producto_id, umbral_minimo, umbral_sobreabastecimiento, 
+                    email_notificacion, is_active, updated_by, updated_at
+                ) VALUES (
+                    :producto_id, :umbral_minimo, :umbral_sobreabastecimiento, 
+                    :email_notificacion, :is_active, :updated_by, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (producto_id) DO UPDATE SET
+                    umbral_minimo = EXCLUDED.umbral_minimo,
+                    umbral_sobreabastecimiento = EXCLUDED.umbral_sobreabastecimiento,
+                    email_notificacion = EXCLUDED.email_notificacion,
+                    is_active = EXCLUDED.is_active,
+                    updated_by = EXCLUDED.updated_by,
+                    updated_at = CURRENT_TIMESTAMP
+            """)
+            conn.execute(query, {
+                "producto_id": config_data.get("producto_id"),
+                "umbral_minimo": config_data.get("umbral_minimo"),
+                "umbral_sobreabastecimiento": config_data.get("umbral_sobreabastecimiento"),
+                "email_notificacion": config_data.get("email_notificacion"),
+                "is_active": config_data.get("is_active", True),
+                "updated_by": config_data.get("updated_by", "Sistema")
+            })
+            return True
+    except Exception as e:
+        logger.error(f"Error en upsert_alert_config: {e}", exc_info=True)
         return False
 
 # --- FUNCIONES DE CONFIGURACIÓN DE SISTEMA ---

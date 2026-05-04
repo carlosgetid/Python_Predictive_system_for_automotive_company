@@ -183,4 +183,80 @@ if tested:
                 st.error(f"Error al enviar prueba: {res.json().get('error', 'Verifique sus credenciales')}")
         except Exception as e:
             st.error(f"Fallo de conexión enviando prueba: {e}")
+
+st.divider()
+
+# --- INICIO DE AGREGADO: Configuración de Umbrales (HU-012) ---
+st.markdown('<h2 style="color:#0F2942; font-size: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">📊 Configuración de Umbrales de Alertas</h2>', unsafe_allow_html=True)
+st.markdown("Define los umbrales personalizados para cada producto (SKU) para la generación de alertas predictivas.")
+
+URL_ALERTS_CONFIG = f"{BASE_URL}/api/v1/alerts/config"
+
+# Get Auth Token
+token = st.session_state.get('token')
+headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+@st.cache_data(ttl=60)
+def fetch_alert_configs():
+    try:
+        response = requests.get(URL_ALERTS_CONFIG, headers=headers, timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        st.error(f"Error al obtener umbrales: {e}")
+    return []
+
+configs_data = fetch_alert_configs()
+
+col_form, col_table = st.columns([1, 2])
+
+with col_form:
+    st.markdown('<div class="metric-card" style="padding: 15px; border-top: 4px solid #1E293B;">', unsafe_allow_html=True)
+    st.markdown("#### Nuevo/Editar Umbral")
+    with st.form("alert_threshold_form"):
+        producto_id = st.text_input("ID de Producto (SKU)", placeholder="Ej. SKU-12345")
+        umbral_minimo = st.number_input("Umbral Mínimo (Quiebre)", min_value=0, value=10)
+        umbral_sobreabastecimiento = st.number_input("Umbral Sobrestock", min_value=1, value=100)
+        email_notificacion = st.text_input("Email de Notificación", placeholder="responsable@empresa.com")
+        is_active = st.checkbox("Activo", value=True)
+        
+        submitted_threshold = st.form_submit_button("Guardar Umbral", type="primary")
+        
+        if submitted_threshold:
+            if not producto_id or not email_notificacion:
+                st.error("Producto y Email son obligatorios.")
+            elif umbral_minimo >= umbral_sobreabastecimiento:
+                st.error("El umbral mínimo debe ser menor al de sobrestock.")
+            else:
+                payload = {
+                    "producto_id": producto_id,
+                    "umbral_minimo": umbral_minimo,
+                    "umbral_sobreabastecimiento": umbral_sobreabastecimiento,
+                    "email_notificacion": email_notificacion,
+                    "is_active": is_active
+                }
+                try:
+                    res = requests.post(URL_ALERTS_CONFIG, json=payload, headers=headers, timeout=5)
+                    if res.status_code == 200:
+                        st.toast("Umbral guardado correctamente", icon="✅")
+                        fetch_alert_configs.clear() # Limpiar caché para recargar tabla
+                        import time
+                        time.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.error(f"Error: {res.json().get('error', res.text)}")
+                except Exception as e:
+                    st.error(f"Error de conexión: {e}")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col_table:
+    if configs_data:
+        import pandas as pd
+        df_configs = pd.DataFrame(configs_data)
+        # Reordenar columnas para mejor visualización
+        cols = ['producto_id', 'umbral_minimo', 'umbral_sobreabastecimiento', 'email_notificacion', 'is_active', 'updated_at']
+        df_display = df_configs[[c for c in cols if c in df_configs.columns]]
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay configuraciones de umbrales activas. Agrega una desde el formulario lateral.")
 # --- FIN DE AGREGADO ---

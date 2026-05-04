@@ -86,6 +86,7 @@ with st.form("login_form"):
                         data = response.json()
                         st.session_state.authenticated = True
                         st.session_state.user = data.get("user")
+                        st.session_state.token = data.get("token")
                         
                         st.toast(f"¡Bienvenido, {st.session_state.user['nombre']}!", icon="👋")
                         time.sleep(0.8)
