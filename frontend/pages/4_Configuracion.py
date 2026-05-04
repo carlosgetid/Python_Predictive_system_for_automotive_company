@@ -2,6 +2,7 @@ import streamlit as st
 import sys
 import logging
 from pathlib import Path
+import requests
 
 # --- CONFIGURACIÓN DE RUTAS (Path Fix) ---
 # Necesario para importar frontend.config correctamente
@@ -10,12 +11,21 @@ sys.path.append(str(root_path))
 
 # --- IMPORTACIÓN DE CONFIGURACIÓN ---
 try:
-    from frontend.config import get_setting, update_setting
+    from frontend.config import get_setting, update_setting, BASE_URL
     # [NUEVO] Importar motor de estilos
     from frontend.styles import get_app_css
 except ImportError as e:
-    st.error(f"Error crítico importando configuración: {e}")
-    st.stop()
+    # Si no se exporta BASE_URL, hacemos un fallback seguro
+    try:
+        from frontend.config import get_setting, update_setting
+        from frontend.styles import get_app_css
+        import os
+        BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
+        BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
+        BASE_URL = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
+    except ImportError as e:
+        st.error(f"Error crítico importando configuración: {e}")
+        st.stop()
 
 # Configuración básica de logging
 logging.basicConfig(level=logging.INFO)
@@ -101,3 +111,76 @@ else:
     """, unsafe_allow_html=True)
 
 st.divider()
+
+# --- INICIO DE AGREGADO: Configuración de Correo y Alertas (HU-007) ---
+st.markdown('<h2 style="color:#0F2942; font-size: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">📧 Notificaciones y Alertas (SMTP)</h2>', unsafe_allow_html=True)
+
+URL_CONFIG_API = f"{BASE_URL}/api/config"
+URL_CONFIG_TEST = f"{BASE_URL}/api/config/test-email"
+
+def fetch_email_config():
+    try:
+        response = requests.get(URL_CONFIG_API, timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        logging.error(f"Error al obtener configuración: {e}")
+    return {}
+
+current_config = fetch_email_config()
+
+with st.form("email_config_form"):
+    st.markdown("Configure los parámetros para el envío automático de alertas de inventario.")
+    c1, c2 = st.columns(2)
+    with c1:
+        smtp_host = st.text_input("Host SMTP", value=current_config.get("smtp_host", "smtp.gmail.com"))
+        smtp_port = st.number_input("Puerto SMTP", value=int(current_config.get("smtp_port", 587)), step=1)
+        email_remitente = st.text_input("Email Remitente (From)", value=current_config.get("email_remitente", "alertas@predictivo.auto"))
+    with c2:
+        smtp_user = st.text_input("Usuario SMTP (Email)", value=current_config.get("smtp_user", ""))
+        smtp_pass = st.text_input("Contraseña SMTP (App Password)", value=current_config.get("smtp_pass", ""), type="password")
+        email_destinatario_alertas = st.text_input("Destinatario de Alertas (To)", value=current_config.get("email_destinatario_alertas", ""), help="Aquí es donde se enviarán las alertas")
+
+    col_btn1, col_btn2 = st.columns([1, 1])
+    with col_btn1:
+        submitted = st.form_submit_button("Guardar Configuración", type="primary")
+    with col_btn2:
+        tested = st.form_submit_button("Enviar Correo de Prueba")
+
+if submitted:
+    # Validaciones básicas
+    if "@" not in email_destinatario_alertas or "@" not in smtp_user:
+        st.error("Por favor ingresa correos electrónicos válidos que contengan '@'.")
+    else:
+        new_data = {
+            "smtp_host": smtp_host,
+            "smtp_port": smtp_port,
+            "smtp_user": smtp_user,
+            "smtp_pass": smtp_pass,
+            "email_remitente": email_remitente,
+            "email_destinatario_alertas": email_destinatario_alertas
+        }
+        try:
+            response = requests.post(URL_CONFIG_API, json=new_data, timeout=5)
+            if response.status_code == 200:
+                st.success("Configuración guardada correctamente.")
+                import time
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error(f"Error al guardar: {response.json().get('error', 'Desconocido')}")
+        except Exception as e:
+            st.error(f"Error de conexión al guardar configuración: {e}")
+
+if tested:
+    with st.spinner("Enviando correo de prueba... esto puede tardar unos segundos"):
+        try:
+            res = requests.post(URL_CONFIG_TEST, timeout=10)
+            if res.status_code == 200:
+                st.success(res.json().get('message', 'Correo enviado.'))
+                st.balloons()
+            else:
+                st.error(f"Error al enviar prueba: {res.json().get('error', 'Verifique sus credenciales')}")
+        except Exception as e:
+            st.error(f"Fallo de conexión enviando prueba: {e}")
+# --- FIN DE AGREGADO ---

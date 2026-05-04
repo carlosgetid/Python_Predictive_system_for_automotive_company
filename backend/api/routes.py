@@ -6,12 +6,14 @@ import datetime
 import os 
 
 # Importar lógica BD
-from backend.database.db_utils import get_db_engine, save_dataframe_to_db, get_model_metrics_history
-
+from backend.database.db_utils import get_db_engine, save_dataframe_to_db, get_model_metrics_history, get_active_alerts, update_alert_status, get_db_engine_and_init, get_config_params, update_config_params
 from backend.services.ingestion_service import ingest_dataframe_to_db, process_excel_file_from_disk
 # --- INICIO DE AGREGADO ---
-# Importamos el Servicio de Ingesta (HU-010)
+# Importamos el Servicio de Ingesta (HU-010) y alertas (HU-007)
 from backend.services.auth_service import authenticate_user
+from backend.services.alert_service import run_daily_alert_analysis
+from backend.services.email_service import send_alerts_summary
+import threading
 # --- FIN DE AGREGADO ---
 
 # Importamos la lógica de predicción...
@@ -357,10 +359,122 @@ def login():
                 "message": "Login exitoso",
                 "user": user  # Retorna {id, username, nombre, rol}
             }), 200
-        else:
             # Login Fallido
             return jsonify({"error": "Usuario o contraseña incorrectos"}), 401
 
     except Exception as e:
         logging.error(f"Error en /login: {e}", exc_info=True)
         return jsonify({"error": "Error interno del servidor"}), 500
+
+# --- INICIO DE AGREGADO: Alertas (HU-007) ---
+@api_bp.route('/api/alerts', methods=['GET'])
+def get_alerts():
+    """Retorna la lista de alertas pendientes."""
+    try:
+        engine = get_db_engine_and_init()
+        if not engine:
+            return jsonify({"error": "Error de conexión a BD"}), 500
+            
+        alerts = get_active_alerts(engine)
+        return jsonify(alerts), 200
+    except Exception as e:
+        logging.error(f"Error en GET /api/alerts: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/alerts/<alert_id>/status', methods=['PUT'])
+def update_alert(alert_id):
+    """Actualiza el estado de una alerta."""
+    try:
+        data = request.get_json()
+        if not data or 'estado' not in data:
+            return jsonify({"error": "Falta el campo 'estado'"}), 400
+            
+        nuevo_estado = data['estado']
+        engine = get_db_engine()
+        
+        success = update_alert_status(alert_id, nuevo_estado, engine)
+        if success:
+            return jsonify({"message": f"Alerta actualizada a {nuevo_estado}"}), 200
+        else:
+            return jsonify({"error": "No se pudo actualizar la alerta (no encontrada o estado inválido)"}), 400
+            
+    except Exception as e:
+        logging.error(f"Error en PUT /api/alerts/<id>/status: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/jobs/generate-alerts', methods=['POST'])
+def trigger_generate_alerts():
+    """Gatilla el análisis diario de alertas en background."""
+    try:
+        # Asegurar inicialización de la tabla antes del hilo
+        get_db_engine_and_init()
+        
+        # Ejecutar en thread para retornar 202 rápido
+        thread = threading.Thread(target=run_daily_alert_analysis)
+        thread.start()
+        
+        return jsonify({"message": "Job de alertas iniciado en background"}), 202
+    except Exception as e:
+        logging.error(f"Error en POST /api/jobs/generate-alerts: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+# --- INICIO DE AGREGADO: Configuración de Sistema ---
+@api_bp.route('/api/config', methods=['GET'])
+def get_config():
+    """Retorna la configuración actual del sistema."""
+    try:
+        engine = get_db_engine_and_init()
+        if not engine:
+            return jsonify({"error": "Error de conexión a BD"}), 500
+        config = get_config_params(engine)
+        return jsonify(config), 200
+    except Exception as e:
+        logging.error(f"Error en GET /api/config: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/config', methods=['POST'])
+def update_config():
+    """Actualiza la configuración del sistema."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No se enviaron datos"}), 400
+        
+        engine = get_db_engine_and_init()
+        success = update_config_params(data, engine)
+        if success:
+            return jsonify({"message": "Configuración actualizada correctamente"}), 200
+        else:
+            return jsonify({"error": "No se pudo actualizar la configuración"}), 500
+    except Exception as e:
+        logging.error(f"Error en POST /api/config: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/config/test-email', methods=['POST'])
+def test_email():
+    """Envía un correo de prueba usando la configuración actual."""
+    try:
+        # 1. Obtener la configuración más reciente
+        config = get_config_params()
+        destinatario = config.get("email_destinatario_alertas")
+        if not destinatario:
+            return jsonify({"error": "No hay destinatario configurado"}), 400
+
+        # 2. Generar alerta de prueba
+        test_alert = [{
+            "sku": "TEST-001",
+            "tipo": "PRUEBA",
+            "mensaje": "Este es un correo de prueba de configuración.",
+            "fecha_proyeccion": datetime.date.today().strftime("%Y-%m-%d")
+        }]
+
+        # 3. Intentar enviar
+        success = send_alerts_summary(test_alert, recipient_email=destinatario)
+        if success:
+            return jsonify({"message": f"Correo de prueba enviado a {destinatario}"}), 200
+        else:
+            return jsonify({"error": "Falló el envío. Verifica las credenciales y el puerto SMTP en los logs del servidor."}), 500
+    except Exception as e:
+        logging.error(f"Error en POST /api/config/test-email: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+# --- FIN DE AGREGADO ---

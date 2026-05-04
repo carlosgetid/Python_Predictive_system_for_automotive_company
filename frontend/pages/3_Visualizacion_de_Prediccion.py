@@ -26,6 +26,9 @@ except ImportError:
     URL_PREDICT = f"{BASE_URL}/predict"
     URL_HISTORY = f"{BASE_URL}/history"
 
+URL_ALERTS = f"{BASE_URL}/api/alerts"
+URL_ALERTS_STATUS = f"{BASE_URL}/api/alerts/{{}}/status"
+
 # Configuración básica de logging
 logging.basicConfig(level=logging.INFO)
 
@@ -48,6 +51,61 @@ st.markdown(get_app_css(), unsafe_allow_html=True)
 # [NUEVO] Título Corporativo
 st.markdown('<h1 style="color:#0F2942; margin-bottom: 5px;">📈 Visualización y Pronóstico de Demanda</h1>', unsafe_allow_html=True)
 st.markdown('<p style="color:#64748B;">Utilice este panel para generar un pronóstico de demanda de unidades para cualquier SKU en una fecha futura.</p>', unsafe_allow_html=True)
+
+# --- INICIO DE AGREGADO: Alertas Activas (HU-007) ---
+def fetch_alerts():
+    try:
+        response = requests.get(URL_ALERTS, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception as e:
+        logging.error(f"Error fetching alerts: {e}")
+        return []
+
+def update_alert_status(alert_id, new_status):
+    try:
+        url = URL_ALERTS_STATUS.format(alert_id)
+        response = requests.put(url, json={"estado": new_status}, timeout=10)
+        if response.status_code == 200:
+            st.success(f"Alerta {new_status.lower()} exitosamente.")
+            return True
+        st.error(f"Error al actualizar alerta: {response.text}")
+        return False
+    except Exception as e:
+        st.error(f"Error de conexión: {e}")
+        return False
+
+with st.expander("🔔 Alertas Activas de Inventario", expanded=True):
+    alertas = fetch_alerts()
+    if not alertas:
+        st.info("✅ No hay alertas pendientes. Todo en orden.")
+    else:
+        st.warning(f"Se han detectado {len(alertas)} alertas pendientes que requieren su atención.")
+        # Utilizar columnas para mostrar las alertas de forma clara
+        for alert in alertas:
+            col1, col2, col3, col4 = st.columns([1.5, 1, 3, 1.5])
+            with col1:
+                st.markdown(f"**SKU:** {alert['sku']}")
+            with col2:
+                # Color code type
+                color = "red" if alert['tipo_alerta'] == 'QUIEBRE' else "orange"
+                st.markdown(f"<span style='color:{color}; font-weight:bold;'>{alert['tipo_alerta']}</span>", unsafe_allow_html=True)
+            with col3:
+                st.markdown(f"<small>{alert['mensaje']}</small>", unsafe_allow_html=True)
+            with col4:
+                # Botones de acción en una misma fila
+                b1, b2 = st.columns(2)
+                with b1:
+                    if st.button("✅", key=f"conf_{alert['id']}", help="Confirmar"):
+                        if update_alert_status(alert['id'], "CONFIRMADA"):
+                            st.rerun()
+                with b2:
+                    if st.button("❌", key=f"desc_{alert['id']}", help="Descartar"):
+                        if update_alert_status(alert['id'], "DESCARTADA"):
+                            st.rerun()
+            st.markdown("---")
+# --- FIN DE AGREGADO ---
 
 # --- Tarea HU-003.T1: Diseño de la interfaz (Rediseñado - Fase 4) ---
 st.markdown("""

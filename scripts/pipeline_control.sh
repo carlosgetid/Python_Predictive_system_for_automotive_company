@@ -80,6 +80,7 @@ case "$1" in
         start_worker "worker_ingestion.sh"
         start_worker "worker_retraining.sh"
         start_worker "worker_metrics.sh"
+        start_worker "worker_alerts.sh"
         echo "=========================================="
         ;;
     stop)
@@ -89,11 +90,12 @@ case "$1" in
         stop_worker "worker_ingestion.sh"
         stop_worker "worker_retraining.sh"
         stop_worker "worker_metrics.sh"
+        stop_worker "worker_alerts.sh"
         echo "=========================================="
         ;;
     status)
         echo "Estado del Pipeline (Cleanup Flag: $CLEANUP_ON_START):"
-        for script in "worker_ingestion.sh" "worker_retraining.sh" "worker_metrics.sh"; do
+        for script in "worker_ingestion.sh" "worker_retraining.sh" "worker_metrics.sh" "worker_alerts.sh"; do
             if [ -f "$PID_DIR/$script.pid" ] && kill -0 $(cat "$PID_DIR/$script.pid") 2>/dev/null; then
                 echo "🟢 $script: CORRIENDO (PID $(cat $PID_DIR/$script.pid))"
             else
