@@ -16,3 +16,4 @@ pydantic
 email-validator
 PyJWT
 gunicorn
+psycopg2-binary
