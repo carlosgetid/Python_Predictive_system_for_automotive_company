@@ -5,7 +5,12 @@ from pathlib import Path
 # --- Configuración del Servidor Backend ---
 BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
 BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
-BASE_URL = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
+# Si el puerto es 443 (producción en Render), usamos https y omitimos el puerto en la URL.
+# Si es 5000 (local), usamos http con el puerto.
+if str(BACKEND_PORT) == "443":
+    BASE_URL = f"https://{BACKEND_HOST}"
+else:
+    BASE_URL = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
 
 # URLs de Endpoints
 URL_LOGIN = f"{BASE_URL}/login" # --- NUEVO: Endpoint de autenticación
