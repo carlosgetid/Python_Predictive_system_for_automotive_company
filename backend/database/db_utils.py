@@ -1,9 +1,13 @@
 import logging
+import os  # <--- IMPORTANTE: Añadir esta importación
 import pandas as pd
 from sqlalchemy import create_engine, text
-from backend.config import DATABASE_URI
+# ELIMINAR ESTA LÍNEA: from backend.config import DATABASE_URI
 from datetime import datetime
 import uuid
+
+# Leemos la URI directamente de las variables de entorno de Render
+DATABASE_URI = os.environ.get("DATABASE_URI")
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
