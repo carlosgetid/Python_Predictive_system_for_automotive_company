@@ -9,6 +9,14 @@ import uuid
 # Leemos la URI directamente de las variables de entorno de Render
 DATABASE_URI = os.environ.get("DATABASE_URI")
 
+# 2. Si no existe (estamos en local), intentamos importar del config.py
+if not DATABASE_URI:
+    try:
+        from backend.config import DATABASE_URI
+        logging.info("Usando DATABASE_URI desde config.py local.")
+    except ImportError:
+        logging.error("No se encontró DATABASE_URI en el entorno ni en config.py")
+
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
