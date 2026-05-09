@@ -13,3 +13,4 @@ pydantic
 email-validator
 PyJWT
 gunicorn
+pg8000
