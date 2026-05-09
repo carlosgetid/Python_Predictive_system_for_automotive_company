@@ -27,8 +27,7 @@ if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user = None
 
-if st.session_state.authenticated:
-    st.rerun()
+# (BORRAMOS EL BLOQUE if st.session_state.authenticated: st.rerun() QUE ESTABA AQUÍ)
 
 # 1. Inyectar CSS Global
 st.markdown(get_app_css(), unsafe_allow_html=True)

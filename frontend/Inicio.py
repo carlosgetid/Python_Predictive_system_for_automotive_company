@@ -96,17 +96,19 @@ def root_redirect():
         st.switch_page(page_inicio)
 
 page_root = st.Page(root_redirect, title="App", default=True)
-page_inicio = st.Page(dashboard_screen, title="Inicio", url_path="inicio")
+page_inicio = st.Page(dashboard_screen, title="Inicio", default=True)
 page_carga = st.Page("pages/1_Carga_de_Datos.py", title="Carga de Datos")
 page_admin = st.Page("pages/2_Administracion.py", title="Administracion")
 page_vis = st.Page("pages/3_Visualizacion_de_Prediccion.py", title="Visualizacion de Prediccion")
 page_config = st.Page("pages/4_Configuracion.py", title="Configuracion")
-page_login = st.Page("pages/login.py", title="Login", url_path="login")
+
+# El login será la página por defecto cuando no haya sesión
+page_login = st.Page("pages/login.py", title="Login", default=True)
 
 # --- CONTROLADOR PRINCIPAL ---
 if not st.session_state.authenticated:
-    pg = st.navigation([page_root, page_login])
+    pg = st.navigation([page_login])
     pg.run()
 else:
-    pg = st.navigation([page_root, page_inicio, page_carga, page_admin, page_vis, page_config])
+    pg = st.navigation([page_inicio, page_carga, page_admin, page_vis, page_config])
     pg.run()
