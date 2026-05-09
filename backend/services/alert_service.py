@@ -112,7 +112,7 @@ class AlertEvaluator:
             email_notif = row.get('email_notificacion')
             if pd.isna(email_notif): email_notif = None
             
-            mensaje = f"Riesgo de quiebre. Stock: {row['stock_actual']}. Proyectado: {row['stock_proyectado']}. Umbral: {row['umbral_minimo']}."
+            mensaje = f"Riesgo de quiebre. Stock: {row['stock_actual']}. Demanda esperada: {row['demanda_48h']}. Proyectado: {row['stock_proyectado']}. Umbral: {row['umbral_minimo']}."
             fecha_str = (hoy + datetime.timedelta(days=2)).strftime("%Y-%m-%d")
             insert_or_update_alert(row['sku'], 'QUIEBRE', mensaje, fecha_str, self.engine)
             alertas_generadas.append({
@@ -124,7 +124,7 @@ class AlertEvaluator:
             email_notif = row.get('email_notificacion')
             if pd.isna(email_notif): email_notif = None
             
-            mensaje = f"Sobrestock detectado. Stock: {row['stock_actual']}. Umbral máximo: {row['umbral_sobreabastecimiento']}."
+            mensaje = f"Sobrestock detectado. Stock: {row['stock_actual']}. Demanda esperada: {row['demanda_48h']}. Proyectado: {row['stock_proyectado']}. Umbral máximo: {row['umbral_sobreabastecimiento']}."
             fecha_str = hoy.strftime("%Y-%m-%d")
             insert_or_update_alert(row['sku'], 'SOBRESTOCK', mensaje, fecha_str, self.engine)
             alertas_generadas.append({
