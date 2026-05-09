@@ -6,7 +6,7 @@ import datetime
 import os 
 
 # Importar lógica BD
-from backend.database.db_utils import get_db_engine, save_dataframe_to_db, get_model_metrics_history, get_active_alerts, update_alert_status, get_db_engine_and_init, get_config_params, update_config_params
+from backend.database.db_utils import get_db_engine, save_dataframe_to_db, get_model_metrics_history, get_active_alerts, update_alert_status, get_db_engine_and_init, get_config_params, update_config_params, reset_db_tables
 from backend.services.ingestion_service import ingest_dataframe_to_db, process_excel_file_from_disk
 # --- INICIO DE AGREGADO ---
 # Importamos el Servicio de Ingesta (HU-010) y alertas (HU-007)
@@ -559,4 +559,18 @@ def upsert_alert_config_endpoint():
     except Exception as e:
         logging.error(f"Error en POST /api/v1/alerts/config: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v1/reset-db', methods=['POST'])
+def reset_db_endpoint():
+    """Limpia las tablas de datos (ventas_detalle y entrenamiento)"""
+    try:
+        success, message = reset_db_tables()
+        if success:
+            return jsonify({"message": message}), 200
+        else:
+            return jsonify({"error": message}), 500
+    except Exception as e:
+        logging.error(f"Error en POST /api/v1/reset-db: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 # --- FIN DE AGREGADO ---

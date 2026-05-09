@@ -260,3 +260,56 @@ with col_table:
     else:
         st.info("No hay configuraciones de umbrales activas. Agrega una desde el formulario lateral.")
 # --- FIN DE AGREGADO ---
+
+st.divider()
+
+# --- INICIO DE AGREGADO: Reset de Base de Datos ---
+st.markdown('<h2 style="color:#DC2626; font-size: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">⚠️ Zona de Peligro: Reset de Base de Datos</h2>', unsafe_allow_html=True)
+st.markdown("Borra todas las métricas de entrenamiento y los datos de ventas para iniciar de cero o depurar.")
+
+URL_RESET_DB = f"{BASE_URL}/api/v1/reset-db"
+
+# Usamos un formulario o un botón con confirmación visual
+st.markdown("""
+<div class="metric-card" style="padding: 15px; border-left: 4px solid #DC2626; background-color: #FEF2F2;">
+    <h4 style="margin-top:0; color:#991B1B; font-size: 16px;">Limpieza de Tablas</h4>
+    <p style="color:#7F1D1D; margin-bottom: 10px; font-size: 14px;">
+    <strong>Advertencia:</strong> Esta acción borrará todas las filas de <code>ventas_detalle</code> y <code>entrenamiento</code>. Los cambios son irreversibles.
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+with st.expander("⚠️ Haz clic aquí para desplegar las opciones de limpieza de la Base de Datos"):
+    st.warning("¿Estás absolutamente seguro de que quieres continuar? Esta acción no se puede deshacer.")
+    confirm_reset_btn = st.button("Sí, borrar datos (ventas y entrenamiento)", type="primary")
+
+# Creamos el log_box debajo del expander para que sea visible incluso si este se contrae
+log_box = st.empty()
+
+if confirm_reset_btn:
+    # La lógica se ejecuta si el botón fue presionado. 
+    # El log_box fuera del expander mostrará el progreso.
+    log_box.info("⏳ Iniciando proceso de borrado...")
+    import time
+    time.sleep(1) # Pequeña pausa para que se alcance a leer
+    log_box.info("⏳ Borrando ventas...\n⏳ Borrando entrenamiento...")
+    
+    try:
+        res = requests.post(URL_RESET_DB, headers=headers, timeout=10)
+        if res.status_code == 200:
+            log_box.success("✅ Borrando ventas... OK\n✅ Borrando entrenamiento... OK\n\n🎉 ¡Borrado exitoso!")
+            st.balloons()
+        else:
+            try:
+                error_msg = res.json().get('error', res.text)
+            except:
+                error_msg = res.text
+            
+            # Si el backend sigue devolviendo 404 en HTML, mostramos un error amigable
+            if "<html" in error_msg.lower():
+                error_msg = "El endpoint /api/v1/reset-db no fue encontrado (Error 404). El servidor backend no tiene la ruta registrada."
+            
+            log_box.error(f"❌ Error al limpiar: {error_msg}")
+    except Exception as e:
+        log_box.error(f"❌ Error de conexión: {e}")
+# --- FIN DE AGREGADO ---
