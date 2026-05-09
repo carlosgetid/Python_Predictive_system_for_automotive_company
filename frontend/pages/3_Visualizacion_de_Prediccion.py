@@ -76,6 +76,19 @@ def update_alert_status(alert_id, new_status):
         st.error(f"Error de conexión: {e}")
         return False
 
+@st.dialog("Confirmación Requerida")
+def confirm_discard_dialog(alert_id, original_display):
+    st.warning("¿Estás seguro que quieres descartar esta alerta? Desaparecerá de tu lista de pendientes.")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Sí, descartar", type="primary", use_container_width=True):
+            if update_alert_status(alert_id, "DESCARTADA"):
+                st.rerun()
+    with col2:
+        if st.button("Cancelar", use_container_width=True):
+            st.session_state[f"status_{alert_id}"] = original_display
+            st.rerun()
+
 with st.expander("🔔 Alertas Activas de Inventario", expanded=True):
     alertas = fetch_alerts()
     if not alertas:
@@ -94,15 +107,38 @@ with st.expander("🔔 Alertas Activas de Inventario", expanded=True):
             with col3:
                 st.markdown(f"<small>{alert['mensaje']}</small>", unsafe_allow_html=True)
             with col4:
-                # Botones de acción en una misma fila
-                b1, b2 = st.columns(2)
-                with b1:
-                    if st.button("✅", key=f"conf_{alert['id']}", help="Confirmar"):
-                        if update_alert_status(alert['id'], "CONFIRMADA"):
-                            st.rerun()
-                with b2:
-                    if st.button("❌", key=f"desc_{alert['id']}", help="Descartar"):
-                        if update_alert_status(alert['id'], "DESCARTADA"):
+                # Botones de acción reemplazados por Selectbox con indicadores visuales
+                status_map = {
+                    "PENDIENTE": "🔴 PENDIENTE",
+                    "EN GESTIÓN": "🟡 EN GESTIÓN",
+                    "DESCARTADA": "⚪ DESCARTADA"
+                }
+                inverse_map = {v: k for k, v in status_map.items()}
+                
+                current_status = alert.get('estado', 'PENDIENTE')
+                current_display = status_map.get(current_status, "🔴 PENDIENTE")
+                opciones_display = list(status_map.values())
+                
+                try:
+                    idx = opciones_display.index(current_display)
+                except ValueError:
+                    idx = 0
+                
+                new_display = st.selectbox(
+                    "Estado",
+                    options=opciones_display,
+                    index=idx,
+                    key=f"status_{alert['id']}",
+                    label_visibility="collapsed"
+                )
+                
+                new_status = inverse_map[new_display]
+                
+                if new_status != current_status:
+                    if new_status == "DESCARTADA":
+                        confirm_discard_dialog(alert['id'], current_display)
+                    else:
+                        if update_alert_status(alert['id'], new_status):
                             st.rerun()
             st.markdown("---")
 # --- FIN DE AGREGADO ---

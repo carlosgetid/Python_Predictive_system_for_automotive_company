@@ -226,7 +226,7 @@ def get_active_alerts(engine):
         query = text("""
             SELECT id, sku, tipo_alerta, mensaje, fecha_proyeccion, estado, creado_en 
             FROM alertas_inventario 
-            WHERE estado = 'PENDIENTE' 
+            WHERE estado IN ('PENDIENTE', 'EN GESTIÓN') 
             ORDER BY creado_en DESC
         """)
         with engine.connect() as conn:
@@ -247,7 +247,7 @@ def get_active_alerts(engine):
 def update_alert_status(alert_id: str, status: str, engine):
     """Cambia el estado de una alerta (e.g., CONFIRMADA, DESCARTADA)."""
     if engine is None: return False
-    valid_statuses = ['PENDIENTE', 'CONFIRMADA', 'DESCARTADA']
+    valid_statuses = ['PENDIENTE', 'EN GESTIÓN', 'DESCARTADA']
     if status not in valid_statuses:
         logger.error(f"Estado de alerta inválido: {status}")
         return False
