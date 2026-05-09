@@ -390,3 +390,24 @@ def update_config_params(data: dict, engine=None):
     except Exception as e:
         logger.error(f"Error al actualizar configuración: {e}", exc_info=True)
         return False
+
+def reset_db_tables(engine=None):
+    """Trunca las tablas del sistema (ventas_detalle y entrenamiento)."""
+    if engine is None: 
+        engine = get_db_engine()
+    if engine is None: return False, "No se pudo conectar a la base de datos."
+
+    try:
+        with engine.connect() as conn:
+            logger.info("Iniciando limpieza de tablas...")
+            conn.execute(text("TRUNCATE TABLE ventas_detalle RESTART IDENTITY CASCADE;"))
+            try:
+                conn.execute(text("TRUNCATE TABLE entrenamiento RESTART IDENTITY CASCADE;"))
+            except Exception:
+                logger.info("Tabla entrenamiento no existía (no pasa nada).")
+            conn.commit()
+            logger.info("Tablas limpiadas exitosamente.")
+            return True, "Tablas limpiadas exitosamente."
+    except Exception as e:
+        logger.error(f"Error crítico limpiando tablas: {e}", exc_info=True)
+        return False, str(e)
