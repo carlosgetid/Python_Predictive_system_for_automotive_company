@@ -1,3 +1,5 @@
+import streamlit as st
+
 def get_app_css():
     return """
     <style>
@@ -69,10 +71,7 @@ def get_app_css():
             display: none !important;
         }
 
-        /* Ocultar página Root (Redirección) en el sidebar */
-        [data-testid="stSidebarNav"] ul li:first-child {
-            display: none !important;
-        }
+
 
         /* --- 5. COMPONENTE: TARJETA DE LOGIN (Clases Custom) --- */
         .login-container {
@@ -209,3 +208,22 @@ def get_app_css():
         
     </style>
     """
+
+def render_sidebar_profile():
+    st.markdown("""
+        <div style="padding: 10px 0;">
+            <h2 style="color: #F8FAFC; margin:0;">Teo Analytics</h2>
+            <p style="color: #94A3B8; font-size: 12px; margin:0;">Enterprise Edition</p>
+        </div>
+        <hr style="margin: 10px 0; border-color: #334155;">
+    """, unsafe_allow_html=True)
+    
+    st.write(f"👤 **{st.session_state.user['nombre']}**")
+    st.caption(f"Perfil: {st.session_state.user['rol']}")
+    
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+    
+    if st.button("Cerrar Sesión", type="secondary", use_container_width=True):
+        st.session_state.authenticated = False
+        st.session_state.user = None
+        st.rerun()

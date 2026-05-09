@@ -30,7 +30,7 @@ if 'authenticated' not in st.session_state:
 # (BORRAMOS EL BLOQUE if st.session_state.authenticated: st.rerun() QUE ESTABA AQUÍ)
 
 # 1. Inyectar CSS Global
-st.markdown(get_app_css(), unsafe_allow_html=True)
+# (El CSS Global ahora se inyecta desde Inicio.py)
 
 # 2. CSS Local para la Tarjeta
 st.markdown("""
