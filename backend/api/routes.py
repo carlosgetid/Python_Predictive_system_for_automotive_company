@@ -6,7 +6,7 @@ import datetime
 import os 
 
 # Importar lógica BD
-from backend.database.db_utils import get_db_engine, save_dataframe_to_db, get_model_metrics_history, get_active_alerts, update_alert_status, get_db_engine_and_init, get_config_params, update_config_params, reset_db_tables
+from backend.database.db_utils import get_db_engine, save_dataframe_to_db, get_model_metrics_history, get_active_alerts, update_alert_status, get_db_engine_and_init, get_config_params, update_config_params, reset_db_tables, get_all_users, update_user_email
 from backend.services.ingestion_service import ingest_dataframe_to_db, process_excel_file_from_disk
 # --- INICIO DE AGREGADO ---
 # Importamos el Servicio de Ingesta (HU-010) y alertas (HU-007)
@@ -571,6 +571,32 @@ def reset_db_endpoint():
             return jsonify({"error": message}), 500
     except Exception as e:
         logging.error(f"Error en POST /api/v1/reset-db: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v1/users', methods=['GET'])
+def get_users_endpoint():
+    try:
+        users = get_all_users()
+        return jsonify(users), 200
+    except Exception as e:
+        logging.error(f"Error en GET /api/v1/users: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v1/users/<int:user_id>/email', methods=['PUT'])
+def update_email_endpoint(user_id):
+    try:
+        data = request.json
+        new_email = data.get('correo_electronico')
+        if not new_email:
+            return jsonify({"error": "correo_electronico es requerido"}), 400
+            
+        success = update_user_email(user_id, new_email)
+        if success:
+            return jsonify({"message": "Correo actualizado"}), 200
+        else:
+            return jsonify({"error": "No se pudo actualizar el correo"}), 500
+    except Exception as e:
+        logging.error(f"Error en PUT /api/v1/users/{user_id}/email: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 # --- FIN DE AGREGADO ---
