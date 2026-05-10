@@ -40,10 +40,11 @@ def get_app_css():
         footer {visibility: hidden;}
         [data-testid="stDecoration"] {display: none;}
         
-        /* Eliminar padding excesivo superior */
+        /* Eliminar padding excesivo superior y ensanchar 30% (aprox 950px en lugar de 730px) */
         .block-container {
             padding-top: 2rem !important;
             padding-bottom: 2rem !important;
+            max-width: 950px !important;
         }
 
         /* --- 4. SIDEBAR PERSONALIZADO --- */

@@ -226,7 +226,7 @@ def get_active_alerts(engine):
         query = text("""
             SELECT id, sku, tipo_alerta, mensaje, fecha_proyeccion, estado, creado_en 
             FROM alertas_inventario 
-            WHERE estado = 'PENDIENTE' 
+            WHERE estado IN ('PENDIENTE', 'EN GESTIÓN') 
             ORDER BY creado_en DESC
         """)
         with engine.connect() as conn:
@@ -247,7 +247,7 @@ def get_active_alerts(engine):
 def update_alert_status(alert_id: str, status: str, engine):
     """Cambia el estado de una alerta (e.g., CONFIRMADA, DESCARTADA)."""
     if engine is None: return False
-    valid_statuses = ['PENDIENTE', 'CONFIRMADA', 'DESCARTADA']
+    valid_statuses = ['PENDIENTE', 'EN GESTIÓN', 'DESCARTADA']
     if status not in valid_statuses:
         logger.error(f"Estado de alerta inválido: {status}")
         return False
@@ -411,3 +411,48 @@ def reset_db_tables(engine=None):
     except Exception as e:
         logger.error(f"Error crítico limpiando tablas: {e}", exc_info=True)
         return False, str(e)
+
+# --- FUNCIONES DE GESTIÓN DE USUARIOS ---
+
+def get_all_users(engine=None):
+    if engine is None: 
+        engine = get_db_engine()
+    if engine is None: return []
+
+    try:
+        query = text("""
+            SELECT id, username, nombre, rol, correo_electronico, created_at
+            FROM usuarios
+            ORDER BY created_at DESC
+        """)
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            users = [dict(row._mapping) for row in result]
+            for u in users:
+                if 'created_at' in u and u['created_at']:
+                    u['created_at'] = str(u['created_at'])
+            return users
+    except Exception as e:
+        logger.error(f"Error al obtener usuarios: {e}", exc_info=True)
+        return []
+
+def update_user_email(user_id: int, email: str, engine=None):
+    if engine is None: 
+        engine = get_db_engine()
+    if engine is None: return False
+
+    try:
+        query = text("""
+            UPDATE usuarios
+            SET correo_electronico = :email
+            WHERE id = :id
+        """)
+        with engine.begin() as conn:
+            result = conn.execute(query, {"email": email, "id": user_id})
+            if result.rowcount > 0:
+                logger.info(f"Correo actualizado para usuario ID {user_id}")
+                return True
+            return False
+    except Exception as e:
+        logger.error(f"Error al actualizar correo de usuario {user_id}: {e}", exc_info=True)
+        return False
