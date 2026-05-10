@@ -25,11 +25,11 @@ def seed_users():
     # Datos de los Usuarios
     default_password = "teo123"
     users_data = [
-        {"username": "lfernandez", "nombre": "Luis Fernández", "rol": "Analista Logística", "password": default_password},
-        {"username": "storres", "nombre": "Sofía Torres", "rol": "Jefa Almacén", "password": default_password},
-        {"username": "jmendoza", "nombre": "Javier Mendoza", "rol": "Gerente Administración", "password": default_password},
-        {"username": "aquispe", "nombre": "Ana Quispe", "rol": "Vendedora", "password": default_password},
-        {"username": "rsolano", "nombre": "Ricardo Solano", "rol": "Gerente General", "password": default_password}
+        {"username": "lfernandez", "nombre": "Luis Fernández", "rol": "Analista Logística", "password": default_password, "correo_electronico": "lfernandez@empresa.com"},
+        {"username": "storres", "nombre": "Sofía Torres", "rol": "Jefa Almacén", "password": default_password, "correo_electronico": "storres@empresa.com"},
+        {"username": "jmendoza", "nombre": "Javier Mendoza", "rol": "Gerente Administración", "password": default_password, "correo_electronico": "jmendoza@empresa.com"},
+        {"username": "aquispe", "nombre": "Ana Quispe", "rol": "Vendedora", "password": default_password, "correo_electronico": "aquispe@empresa.com"},
+        {"username": "rsolano", "nombre": "Ricardo Solano", "rol": "Gerente General", "password": default_password, "correo_electronico": "rsolano@empresa.com"}
     ]
 
     try:
@@ -46,6 +46,7 @@ def seed_users():
                 password_hash VARCHAR(255) NOT NULL,
                 nombre VARCHAR(100) NOT NULL,
                 rol VARCHAR(50) NOT NULL,
+                correo_electronico VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """)
@@ -59,8 +60,8 @@ def seed_users():
             logger.info("Insertando usuarios semilla...")
             
             query_insert = text("""
-                INSERT INTO usuarios (username, password_hash, nombre, rol)
-                VALUES (:u, :p, :n, :r)
+                INSERT INTO usuarios (username, password_hash, nombre, rol, correo_electronico)
+                VALUES (:u, :p, :n, :r, :e)
             """)
 
             for user in users_data:
@@ -69,7 +70,8 @@ def seed_users():
                     "u": user["username"],
                     "p": p_hash,
                     "n": user["nombre"],
-                    "r": user["rol"]
+                    "r": user["rol"],
+                    "e": user["correo_electronico"]
                 })
                 logger.info(f"Usuario creado: {user['username']}")
             

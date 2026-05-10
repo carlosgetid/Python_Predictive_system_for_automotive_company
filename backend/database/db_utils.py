@@ -103,6 +103,13 @@ def initialize_db(engine):
                     INSERT INTO configuracion_sistema (smtp_host, smtp_port) VALUES ('smtp.gmail.com', 587)
                 """))
                 
+            # Agregar columna correo_electronico a tabla usuarios si no existe
+            try:
+                conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS correo_electronico VARCHAR(255);"))
+                logger.info("Verificada columna correo_electronico en tabla usuarios.")
+            except Exception as col_e:
+                logger.warning(f"No se pudo verificar/crear la columna correo_electronico: {col_e}")
+                
             logger.info("Tablas de sistema verificadas/creadas con éxito.")
     except Exception as e:
         logger.error(f"Error al inicializar la base de datos: {e}")
@@ -416,7 +423,7 @@ def reset_db_tables(engine=None):
 
 def get_all_users(engine=None):
     if engine is None: 
-        engine = get_db_engine()
+        engine = get_db_engine_and_init()
     if engine is None: return []
 
     try:
