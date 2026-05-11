@@ -1,6 +1,7 @@
 import logging
 import pandas as pd
-import shutil  # <--- AGREGAR ESTA LÍNEA
+
+
 from flask import Blueprint, request, jsonify
 import datetime 
 import os
@@ -13,7 +14,7 @@ from backend.database.db_utils import (
     update_alert_status, get_db_engine_and_init, get_config_params, update_config_params,
     reset_db_tables, get_all_users, update_user_email, get_pipeline_interval, set_pipeline_interval,
     register_uploaded_file, get_all_uploaded_files, delete_uploaded_file,
-    mark_files_as_processed, update_file_status, get_approved_files
+    mark_files_as_processed, update_file_status, get_approved_files, auto_approve_valid_files
 )
 from backend.services.ingestion_service import ingest_dataframe_to_db, process_excel_file_from_disk
 # --- INICIO DE AGREGADO ---
@@ -61,16 +62,7 @@ import backend.ml_core.training as training_pipeline
 # Blueprint
 api_bp = Blueprint('api', __name__)
 
-# --- INICIO DE AGREGADO: Configuración Ingesta Automática ---
-BASE_DATA_DIR = "data_fuente"
-INGEST_DIR = os.path.join(BASE_DATA_DIR, "entrada")
-PROCESSED_DIR = os.path.join(BASE_DATA_DIR, "procesados")
-FAILED_DIR = os.path.join(BASE_DATA_DIR, "fallidos")
 
-# Asegurar existencia de directorios
-for d in [INGEST_DIR, PROCESSED_DIR, FAILED_DIR]:
-    os.makedirs(d, exist_ok=True)
-# --- FIN DE AGREGADO ---
 
 # --- Endpoint /upload (Refactorizado para usar Servicio Centralizado) ---
 @api_bp.route('/upload', methods=['POST'])
@@ -162,52 +154,24 @@ def upload_file():
 @api_bp.route('/api/v1/trigger_ingestion', methods=['POST'])
 def trigger_ingestion():
     """
-    HU-010: Disparador de ingesta batch desde disco.
-    Escanea '/data_fuente/entrada', procesa archivos y los mueve.
+    Pipeline 'Ingesta de Datos'.
+    Responsabilidad única: promover TODOS los archivos con estado 'valido'
+    a estado 'aprobado' automáticamente.
+
+    No lee archivos del disco, no valida contenido, no mueve archivos.
+    Esa lógica pertenece al endpoint /upload (carga manual) o a los scripts
+    de ingesta de disco si se requirieran en el futuro.
     """
-    logging.info("--- Iniciando ciclo de Ingesta Automatizada ---")
-    report = {"processed": [], "failed": [], "total_found": 0}
-
+    logging.info("--- Pipeline Ingesta de Datos: iniciando aprobación automática ---")
     try:
-        # 1. Escaneo
-        if not os.path.exists(INGEST_DIR):
-             return jsonify({"error": f"Directorio no encontrado: {INGEST_DIR}"}), 500
-             
-        files = [f for f in os.listdir(INGEST_DIR) if f.endswith(('.xlsx', '.xls'))]
-        report["total_found"] = len(files)
-
-        if not files:
-            return jsonify({"message": "No hay archivos pendientes.", "report": report}), 200
-
-        # 2. Procesamiento Batch
-        for filename in files:
-            src_path = os.path.join(INGEST_DIR, filename)
-            
-            # Llamada al servicio específico para archivos en disco
-            success = process_excel_file_from_disk(src_path)
-
-            # 3. Gestión de Archivos (Mover a procesados/fallidos)
-            try:
-                if success:
-                    dst_path = os.path.join(PROCESSED_DIR, filename)
-                    shutil.move(src_path, dst_path)
-                    report["processed"].append(filename)
-                    logging.info(f"ARCHIVO PROCESADO: {filename}")
-                else:
-                    dst_path = os.path.join(FAILED_DIR, filename)
-                    shutil.move(src_path, dst_path)
-                    report["failed"].append(filename)
-                    logging.warning(f"ARCHIVO FALLIDO: {filename}")
-            except OSError as io_err:
-                logging.error(f"Error de sistema moviendo archivo {filename}: {io_err}")
-                report["failed"].append(f"{filename} (Error IO)")
-
-        # Respuesta Parcial (207) o Exitosa (200)
-        status_code = 200 if not report["failed"] else 207
-        return jsonify({"message": "Ciclo de ingesta finalizado.", "report": report}), status_code
-
+        promoted, message = auto_approve_valid_files()
+        logging.info(f"Pipeline Ingesta: {message}")
+        return jsonify({
+            "message": message,
+            "archivos_aprobados": promoted
+        }), 200
     except Exception as e:
-        logging.error(f"Error crítico en trigger_ingestion: {e}", exc_info=True)
+        logging.error(f"Error en trigger_ingestion: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 # --- FIN DE AGREGADO ---
 

@@ -15,54 +15,79 @@ if st.session_state.user['rol'] == 'Vendedora':
     st.error("⛔ Acceso Restringido: Su perfil no tiene permisos para cargar datos.")
     st.stop()
 
-MOSTRAR_CARGA_MANUAL = get_setting("MOSTRAR_CARGA_MANUAL", True)
+
 
 st.markdown(get_app_css(), unsafe_allow_html=True)
 
-# ── CSS específico de esta página ──────────────────────────────────────────────
+# ── CSS específico de esta página ───────────
 st.markdown("""
 <style>
-/* Zona de drop */
+/* ═══════════════════  DROPZONE PREMIUM  ═══════════════════ */
 [data-testid="stFileUploadDropzone"] {
-    border: 2px dashed #94A3B8 !important;
-    border-radius: 12px !important;
-    background: linear-gradient(135deg,#F8FAFC 0%,#EFF6FF 100%) !important;
-    box-shadow: none !important;
-    min-height: 100px !important;
-    transition: border-color .2s, background .2s;
+    border: 2.5px dashed #93C5FD !important;
+    border-radius: 16px !important;
+    background: linear-gradient(145deg,#F0F9FF 0%,#EFF6FF 50%,#F8FAFF 100%) !important;
+    min-height: 180px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    transition: all 0.25s ease !important;
+    box-shadow: 0 2px 12px rgba(59,130,246,.08) !important;
 }
-[data-testid="stFileUploadDropzone"]:hover {
-    border-color: #0F2942 !important;
-    background: linear-gradient(135deg,#EFF6FF 0%,#DBEAFE 100%) !important;
-    box-shadow: 0 0 0 4px rgba(15,41,66,.07) !important;
+[data-testid="stFileUploadDropzone"]:hover,
+[data-testid="stFileUploadDropzone"]:focus-within {
+    border-color: #2563EB !important;
+    background: linear-gradient(145deg,#DBEAFE 0%,#EEF2FF 50%,#E0F2FE 100%) !important;
+    box-shadow: 0 4px 24px rgba(37,99,235,.18), 0 0 0 4px rgba(37,99,235,.08) !important;
+    transform: scale(1.005) !important;
+}
+[data-testid="stFileUploadDropzone"] svg {
+    width: 52px !important; height: 52px !important;
+    color: #3B82F6 !important; opacity: .75 !important;
+}
+[data-testid="stFileUploadDropzone"] small {
+    font-size: 12px !important; color: #94A3B8 !important; margin-top: 4px !important;
+}
+[data-testid="stFileUploadDropzone"] button {
+    background: #2563EB !important; color: #fff !important;
+    border: none !important; border-radius: 8px !important;
+    padding: 8px 22px !important; font-weight: 600 !important;
+    font-size: 13px !important; margin-top: 12px !important;
+    cursor: pointer !important; transition: background .2s !important;
+    box-shadow: 0 2px 8px rgba(37,99,235,.3) !important;
+}
+[data-testid="stFileUploadDropzone"] button:hover { background: #1D4ED8 !important; }
+[data-testid="stFileUploader"] label {
+    font-size: 13px !important; color: #475569 !important;
+    font-weight: 500 !important; margin-bottom: 6px !important; display: block !important;
 }
 
 /* Tabla */
 .tbl-header {
-    display: flex; align-items: center; gap:8px;
-    background: #F1F5F9; border-radius: 8px 8px 0 0;
-    padding: 10px 14px;
-    font-size: 11px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .05em; color: #0F2942;
-    border-bottom: 2px solid #E2E8F0;
+    display:flex; align-items:center; gap:8px;
+    background:#F1F5F9; border-radius:8px 8px 0 0;
+    padding:10px 14px; font-size:11px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.05em; color:#0F2942;
+    border-bottom:2px solid #E2E8F0;
 }
 .tbl-row {
-    display: flex; align-items: center; gap:8px;
-    padding: 9px 14px;
-    border-bottom: 1px solid #F1F5F9;
-    background: #fff;
-    transition: background .12s;
+    display:flex; align-items:center; gap:8px;
+    padding:9px 14px; border-bottom:1px solid #F1F5F9;
+    background:#fff; transition:background .12s;
 }
-.tbl-row:hover { background: #F8FAFC; }
-.tbl-row:last-child { border-radius: 0 0 8px 8px; border-bottom: none; }
+.tbl-row:hover { background:#F8FAFC; }
+.tbl-row:last-child { border-radius:0 0 8px 8px; border-bottom:none; }
 
 /* Badges */
 .badge {
-    display: inline-flex; align-items: center; gap:4px;
-    border-radius: 20px; padding: 3px 12px;
-    font-size: 12px; font-weight: 700; white-space: nowrap;
+    display:inline-flex; align-items:center; gap:4px;
+    border-radius:20px; padding:3px 12px;
+    font-size:12px; font-weight:700; white-space:nowrap;
 }
 .badge-valido    { background:#D1FAE5; color:#065F46; }
+.badge-aprobado  { background:#DBEAFE; color:#1E40AF; }
 .badge-invalido  { background:#FEE2E2; color:#991B1B; }
 .badge-procesado { background:#EDE9FE; color:#4C1D95; }
 .badge-pendiente { background:#F1F5F9; color:#64748B; }
@@ -70,9 +95,8 @@ st.markdown("""
 /* Section title */
 .stitle {
     color:#0F2942; font-size:17px; font-weight:700;
-    border-bottom: 2px solid #E2E8F0;
-    padding-bottom: 10px; margin-bottom:16px;
-    letter-spacing:-.01em;
+    border-bottom:2px solid #E2E8F0;
+    padding-bottom:10px; margin-bottom:16px; letter-spacing:-.01em;
 }
 
 /* Info box */
@@ -80,6 +104,23 @@ st.markdown("""
     background:#EFF6FF; border:1px solid #BFDBFE;
     border-radius:8px; padding:10px 14px;
     color:#1E40AF; font-size:13px; margin-bottom:12px;
+}
+/* Drop hint banner */
+.drop-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    pointer-events: none;
+    margin-bottom: 8px;
+}
+.drop-hint .drop-icon { font-size: 42px; line-height: 1; }
+.drop-hint .drop-title {
+    font-size: 16px; font-weight: 700; color: #1E40AF;
+    letter-spacing: -0.01em;
+}
+.drop-hint .drop-sub {
+    font-size: 12px; color: #64748B;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -142,22 +183,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ── Modo deshabilitado ─────────────────────────────────────────────────────────
-if not MOSTRAR_CARGA_MANUAL:
-    st.markdown("""
-    <div class="metric-card" style="background-color:#F8FAFC;border-left:5px solid #64748B;">
-        <h3 style="color:#0F2942;margin-top:0;">🔒 Modo Manual Deshabilitado</h3>
-        <p style="color:#475569;font-size:14px;">
-            El sistema opera bajo <b>Ingesta Automatizada (Batch)</b>.
-            La carga manual ha sido restringida por el administrador.
-        </p>
-        <div style="background:#E2E8F0;padding:12px;border-radius:6px;
-                    font-family:monospace;color:#334155;font-size:13px;margin:15px 0;">
-            📥 Directorio de Entrada: /data_fuente/entrada/
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    st.stop()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  SECCIÓN A: ARCHIVOS PERSISTIDOS EN EL SISTEMA (fuente: BD)
@@ -258,13 +283,22 @@ st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
     st.markdown('<p class="stitle">📤 Cargar Nuevos Archivos</p>', unsafe_allow_html=True)
 
+    # Hint visual sobre la zona
+    st.markdown("""
+    <div class="drop-hint">
+        <div class="drop-icon">📥</div>
+        <div class="drop-title">Arrastre y suelte sus archivos Excel aquí</div>
+        <div class="drop-sub">Solo archivos .xlsx &nbsp;•&nbsp; Máx. 200 MB por archivo &nbsp;•&nbsp; Puede soltar varios a la vez</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     # Zona de drag & drop
     new_files = st.file_uploader(
-        label="Arrastre y suelte archivos .xlsx aquí, o haga clic para seleccionar",
+        label="📁 O haga clic en **Examinar archivos** para seleccionarlos manualmente:",
         type=["xlsx"],
         accept_multiple_files=True,
         key=f"uploader_{st.session_state.uploader_key}",
-        help="Solo se aceptan archivos .xlsx corporativos con la hoja 'Detalle'."
+        help="Solo archivos .xlsx con la hoja 'Detalle'. Se pueden subir varios al mismo tiempo."
     )
 
     # Agregar a la cola (sin duplicados ni eliminados)

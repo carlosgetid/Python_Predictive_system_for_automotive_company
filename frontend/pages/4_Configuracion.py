@@ -71,7 +71,6 @@ st.sidebar.markdown("### 🛠️ Panel de Navegación")
 selected_tab = st.sidebar.radio(
     "Seleccione una sección:",
     options=[
-        "📂 Ingesta de Datos",
         "📧 Notificaciones SMTP",
         "📊 Umbrales de Alerta",
         "⚠️ Reset BD",
@@ -82,53 +81,9 @@ selected_tab = st.sidebar.radio(
 )
 
 # ============================================================
-# SECCIÓN 1: INGESTA DE DATOS
+# SECCIÓN 1: NOTIFICACIONES SMTP
 # ============================================================
-if selected_tab == "📂 Ingesta de Datos":
-    st.markdown('<h2 style="color:#0F2942; font-size: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">📂 Control de Ingesta de Datos</h2>', unsafe_allow_html=True)
-
-    col1, col2 = st.columns([3, 1])
-
-    with col1:
-        st.markdown("""
-        <div class="metric-card" style="padding: 20px; border-left: 4px solid #0F2942;">
-            <h4 style="margin-top:0; color:#0F2942; font-size: 16px;">Habilitar Carga Manual de Archivos</h4>
-            <p style="color:#475569; margin-bottom: 10px; font-size: 14px;">
-            Define si los usuarios pueden subir archivos Excel/CSV manualmente desde la interfaz web.
-            </p>
-            <ul style="color:#64748B; font-size: 13px; margin-bottom: 0; padding-left: 20px;">
-                <li><b>Activado (ON):</b> Muestra el cargador en 'Carga de Datos'.</li>
-                <li><b>Desactivado (OFF):</b> Se utiliza exclusivamente la Ingesta Automatizada (carpeta <code>/data_fuente/entrada</code>).</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        current_state = get_setting("MOSTRAR_CARGA_MANUAL", True)
-        new_state = st.toggle("Estado", value=current_state, key="toggle_manual")
-        if new_state != current_state:
-            if update_setting("MOSTRAR_CARGA_MANUAL", new_state):
-                st.toast(f"Configuración guardada: {'Habilitado' if new_state else 'Deshabilitado'}", icon="✅")
-            else:
-                st.error("Error al guardar en settings.json")
-
-    if new_state:
-        st.markdown("""
-        <div style="margin-top: 15px; padding: 10px; background-color: #D1FAE5; color: #10B981; border-radius: 6px; font-weight: 600; border: 1px solid #10B981;">
-            ✅ La carga manual está HABILITADA actualmente.
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div style="margin-top: 15px; padding: 10px; background-color: #F0F4F8; color: #64748B; border-radius: 6px; border: 1px solid #94A3B8;">
-            ℹ️ La carga manual está DESHABILITADA. El sistema opera en modo automático.
-        </div>
-        """, unsafe_allow_html=True)
-
-# ============================================================
-# SECCIÓN 2: NOTIFICACIONES SMTP
-# ============================================================
-elif selected_tab == "📧 Notificaciones SMTP":
+if selected_tab == "📧 Notificaciones SMTP":
     st.markdown('<h2 style="color:#0F2942; font-size: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">📧 Notificaciones y Alertas (SMTP)</h2>', unsafe_allow_html=True)
 
     URL_CONFIG_API = f"{BASE_URL}/api/config"
@@ -214,7 +169,7 @@ elif selected_tab == "📧 Notificaciones SMTP":
                 st.error(f"Fallo de conexión enviando prueba: {e}")
 
 # ============================================================
-# SECCIÓN 3: UMBRALES DE ALERTA
+# SECCIÓN 2: UMBRALES DE ALERTA
 # ============================================================
 elif selected_tab == "📊 Umbrales de Alerta":
     st.markdown('<h2 style="color:#0F2942; font-size: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">📊 Configuración de Umbrales de Alertas</h2>', unsafe_allow_html=True)
@@ -314,7 +269,7 @@ elif selected_tab == "📊 Umbrales de Alerta":
         st.info("No hay configuraciones de umbrales activas. Agrega una desde el formulario superior.")
 
 # ============================================================
-# SECCIÓN 4: RESET BD
+# SECCIÓN 3: RESET BD
 # ============================================================
 elif selected_tab == "⚠️ Reset BD":
     st.markdown('<h2 style="color:#DC2626; font-size: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">⚠️ Zona de Peligro: Reset de Base de Datos</h2>', unsafe_allow_html=True)
@@ -361,7 +316,7 @@ elif selected_tab == "⚠️ Reset BD":
             log_box.error(f"❌ Error de conexión: {e}")
 
 # ============================================================
-# SECCIÓN 5: GESTIÓN DE USUARIOS
+# SECCIÓN 4: GESTIÓN DE USUARIOS
 # ============================================================
 elif selected_tab == "👥 Gestión de Usuarios":
     st.markdown('<h2 style="color:#0F2942; font-size: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">👥 Gestión de Usuarios</h2>', unsafe_allow_html=True)
@@ -408,7 +363,7 @@ elif selected_tab == "👥 Gestión de Usuarios":
 
 
 # ============================================================
-# SECCIÓN 6: PIPELINES
+# SECCIÓN 5: PIPELINES
 # ============================================================
 elif selected_tab == "🚀 Pipelines":
     st.markdown('<h2 style="color:#0F2942; font-size: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">🚀 Control de Pipelines Automatizados</h2>', unsafe_allow_html=True)
@@ -426,7 +381,7 @@ elif selected_tab == "🚀 Pipelines":
     }
 
     WORKER_DESCRIPTIONS = {
-        "worker_ingestion":  "Escanea la carpeta `/data_fuente/entrada` y procesa archivos Excel/CSV automáticamente.",
+        "worker_ingestion":  "Aprueba automáticamente los archivos Excel con estado 'Válido', promoviéndolos a 'Aprobado' para el entrenamiento del modelo.",
         "worker_retraining": "Reentrena los modelos de ML con los datos más recientes de la base de datos.",
         "worker_metrics":    "Recopila métricas de rendimiento de los modelos y las guarda en la BD.",
         "worker_alerts":     "Verifica umbrales de inventario y envía alertas por correo si se detectan anomalías.",

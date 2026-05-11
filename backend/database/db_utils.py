@@ -672,6 +672,35 @@ def get_approved_files(engine=None):
         return []
 
 
+def auto_approve_valid_files(engine=None):
+    """
+    Responsabilidad exclusiva del pipeline 'Ingesta de Datos':
+    Promueve TODOS los archivos en estado 'valido' a 'aprobado'.
+
+    No toca archivos 'invalido', 'aprobado' ni 'procesado'.
+
+    Returns:
+        (promoted: int, message: str)
+    """
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return 0, "No se pudo conectar a la base de datos."
+    try:
+        query = text("""
+            UPDATE archivos_cargados
+            SET estado = 'aprobado'
+            WHERE estado = 'valido'
+        """)
+        with engine.begin() as conn:
+            result = conn.execute(query)
+            promoted = result.rowcount
+        logger.info(f"Pipeline Ingesta: {promoted} archivo(s) promovidos de 'valido' a 'aprobado'.")
+        return promoted, f"{promoted} archivo(s) aprobado(s) automáticamente."
+    except Exception as e:
+        logger.error(f"Error en auto_approve_valid_files: {e}", exc_info=True)
+        return 0, str(e)
+
 # --- FUNCIONES DE INTERVALOS DE PIPELINE ---
 
 PIPELINE_INTERVAL_COLUMNS = {
