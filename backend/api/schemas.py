@@ -5,7 +5,6 @@ from datetime import datetime
 class AlertConfigBase(BaseModel):
     umbral_minimo: int = Field(..., ge=0, description="Umbral mínimo para generar alerta de quiebre")
     umbral_sobreabastecimiento: int = Field(..., gt=0, description="Umbral para generar alerta de sobreabastecimiento")
-    email_notificacion: EmailStr = Field(..., description="Email donde se enviarán las notificaciones")
     is_active: bool = True
 
     @validator('umbral_sobreabastecimiento')

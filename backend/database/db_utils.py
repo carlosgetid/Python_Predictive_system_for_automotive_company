@@ -92,7 +92,8 @@ def initialize_db(engine):
                     smtp_user VARCHAR(255) DEFAULT '',
                     smtp_pass VARCHAR(255) DEFAULT '',
                     email_remitente VARCHAR(255) DEFAULT 'alertas@predictivo.auto',
-                    email_destinatario_alertas VARCHAR(255) DEFAULT ''
+                    email_destinatario_alertas VARCHAR(255) DEFAULT '',
+                    perfil_destinatario_alertas VARCHAR(255) DEFAULT ''
                 );
             """))
             
@@ -286,8 +287,8 @@ def get_alert_configs(engine, skip: int = 0, limit: int = 100):
     if engine is None: return []
     try:
         query = text("""
-            SELECT id, producto_id, umbral_minimo, umbral_sobreabastecimiento, 
-                   email_notificacion, is_active, updated_by, updated_at
+            SELECT id, producto_id, umbral_minimo, umbral_sobreabastecimiento,
+                   is_active, updated_by, updated_at
             FROM alert_configurations
             ORDER BY updated_at DESC
             OFFSET :skip LIMIT :limit
@@ -312,16 +313,15 @@ def upsert_alert_config(engine, config_data: dict):
         with engine.begin() as conn:
             query = text("""
                 INSERT INTO alert_configurations (
-                    producto_id, umbral_minimo, umbral_sobreabastecimiento, 
+                    producto_id, umbral_minimo, umbral_sobreabastecimiento,
                     email_notificacion, is_active, updated_by, updated_at
                 ) VALUES (
-                    :producto_id, :umbral_minimo, :umbral_sobreabastecimiento, 
-                    :email_notificacion, :is_active, :updated_by, CURRENT_TIMESTAMP
+                    :producto_id, :umbral_minimo, :umbral_sobreabastecimiento,
+                    '', :is_active, :updated_by, CURRENT_TIMESTAMP
                 )
                 ON CONFLICT (producto_id) DO UPDATE SET
                     umbral_minimo = EXCLUDED.umbral_minimo,
                     umbral_sobreabastecimiento = EXCLUDED.umbral_sobreabastecimiento,
-                    email_notificacion = EXCLUDED.email_notificacion,
                     is_active = EXCLUDED.is_active,
                     updated_by = EXCLUDED.updated_by,
                     updated_at = CURRENT_TIMESTAMP
@@ -330,7 +330,6 @@ def upsert_alert_config(engine, config_data: dict):
                 "producto_id": config_data.get("producto_id"),
                 "umbral_minimo": config_data.get("umbral_minimo"),
                 "umbral_sobreabastecimiento": config_data.get("umbral_sobreabastecimiento"),
-                "email_notificacion": config_data.get("email_notificacion"),
                 "is_active": config_data.get("is_active", True),
                 "updated_by": config_data.get("updated_by", "Sistema")
             })
@@ -348,7 +347,13 @@ def get_config_params(engine=None):
     if engine is None: return {}
     
     try:
-        query = text("SELECT smtp_host, smtp_port, smtp_user, smtp_pass, email_remitente, email_destinatario_alertas FROM configuracion_sistema LIMIT 1")
+        query = text("""
+            SELECT cs.smtp_host, cs.smtp_port, cs.smtp_user, cs.smtp_pass, cs.email_remitente, 
+                   u.correo_electronico as email_destinatario_alertas, cs.perfil_destinatario_alertas 
+            FROM configuracion_sistema cs
+            LEFT JOIN usuarios u ON cs.perfil_destinatario_alertas = u.username
+            LIMIT 1
+        """)
         with engine.connect() as conn:
             result = conn.execute(query).fetchone()
             if result:
@@ -360,7 +365,8 @@ def get_config_params(engine=None):
                     "smtp_user": "",
                     "smtp_pass": "",
                     "email_remitente": "alertas@predictivo.auto",
-                    "email_destinatario_alertas": ""
+                    "email_destinatario_alertas": "",
+                    "perfil_destinatario_alertas": ""
                 }
     except Exception as e:
         logger.error(f"Error al obtener configuración: {e}")
@@ -382,7 +388,7 @@ def update_config_params(data: dict, engine=None):
                     smtp_user = :smtp_user,
                     smtp_pass = :smtp_pass,
                     email_remitente = :email_remitente,
-                    email_destinatario_alertas = :email_destinatario_alertas
+                    perfil_destinatario_alertas = :perfil_destinatario_alertas
             """)
             conn.execute(query, {
                 "smtp_host": data.get("smtp_host", "smtp.gmail.com"),
@@ -390,7 +396,7 @@ def update_config_params(data: dict, engine=None):
                 "smtp_user": data.get("smtp_user", ""),
                 "smtp_pass": data.get("smtp_pass", ""),
                 "email_remitente": data.get("email_remitente", "alertas@predictivo.auto"),
-                "email_destinatario_alertas": data.get("email_destinatario_alertas", "")
+                "perfil_destinatario_alertas": data.get("perfil_destinatario_alertas", "")
             })
             logger.info("Configuración del sistema actualizada con éxito.")
             return True

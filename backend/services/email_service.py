@@ -95,7 +95,7 @@ class SmtpGmailProvider(EmailProvider):
         final_recipient = recipient_email if recipient_email else config.get("email_destinatario_alertas")
         
         if not final_recipient:
-            logger.warning("No hay destinatario configurado para el envío de correos.")
+            logger.warning("No hay destinatario configurado válido para el envío de correos.")
             return False
 
         if not alerts_data:
@@ -184,7 +184,7 @@ class AwsSesProvider(EmailProvider):
             final_recipient = recipient_email if recipient_email else config.get("email_destinatario_alertas")
             
             if not final_recipient:
-                logger.warning("No hay destinatario configurado para el envío de correos.")
+                logger.warning("No hay destinatario configurado válido para el envío de correos.")
                 return False
                 
             html_body = self._build_html_content(alerts_data)
