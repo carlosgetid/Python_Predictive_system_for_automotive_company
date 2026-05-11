@@ -128,6 +128,19 @@ def initialize_db(engine):
             except Exception as col_e:
                 logger.warning(f"No se pudo verificar/crear la columna correo_electronico: {col_e}")
                 
+            # Tabla de registro de archivos cargados
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS archivos_cargados (
+                    id SERIAL PRIMARY KEY,
+                    nombre_archivo VARCHAR(512) NOT NULL,
+                    fecha_carga TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    estado VARCHAR(20) DEFAULT 'valido',
+                    filas_guardadas INTEGER DEFAULT 0,
+                    mensaje TEXT,
+                    cargado_por VARCHAR(100)
+                );
+            """))
+
             logger.info("Tablas de sistema verificadas/creadas con éxito.")
     except Exception as e:
         logger.error(f"Error al inicializar la base de datos: {e}")
@@ -485,6 +498,110 @@ def update_user_email(user_id: int, email: str, engine=None):
             return False
     except Exception as e:
         logger.error(f"Error al actualizar correo de usuario {user_id}: {e}", exc_info=True)
+        return False
+
+
+# --- FUNCIONES DE REGISTRO DE ARCHIVOS CARGADOS ---
+
+def register_uploaded_file(nombre_archivo: str, estado: str, filas_guardadas: int,
+                           mensaje: str = "", cargado_por: str = "Sistema", engine=None):
+    """
+    Registra un archivo procesado en la tabla archivos_cargados.
+    estado: 'valido' | 'invalido' | 'procesado'
+    """
+    if engine is None:
+        engine = get_db_engine_and_init()
+    if engine is None:
+        return None
+    try:
+        query = text("""
+            INSERT INTO archivos_cargados
+                (nombre_archivo, estado, filas_guardadas, mensaje, cargado_por)
+            VALUES
+                (:nombre, :estado, :filas, :mensaje, :cargado_por)
+            RETURNING id
+        """)
+        with engine.begin() as conn:
+            result = conn.execute(query, {
+                "nombre": nombre_archivo,
+                "estado": estado,
+                "filas": filas_guardadas,
+                "mensaje": mensaje,
+                "cargado_por": cargado_por,
+            })
+            row = result.fetchone()
+            return row[0] if row else None
+    except Exception as e:
+        logger.error(f"Error registrando archivo '{nombre_archivo}': {e}", exc_info=True)
+        return None
+
+
+def get_all_uploaded_files(engine=None):
+    """Retorna todos los archivos registrados, ordenados por fecha desc."""
+    if engine is None:
+        engine = get_db_engine_and_init()
+    if engine is None:
+        return []
+    try:
+        query = text("""
+            SELECT id, nombre_archivo, fecha_carga, estado, filas_guardadas, mensaje, cargado_por
+            FROM archivos_cargados
+            ORDER BY fecha_carga DESC
+        """)
+        with engine.connect() as conn:
+            rows = conn.execute(query).fetchall()
+            files = []
+            for row in rows:
+                d = dict(row._mapping)
+                if d.get('fecha_carga'):
+                    d['fecha_carga'] = d['fecha_carga'].strftime('%Y-%m-%d %H:%M')
+                files.append(d)
+            return files
+    except Exception as e:
+        logger.error(f"Error obteniendo archivos cargados: {e}", exc_info=True)
+        return []
+
+
+def delete_uploaded_file(file_id: int, engine=None):
+    """
+    Elimina el registro de un archivo de la tabla archivos_cargados.
+    NO elimina los datos de ventas_detalle ya guardados.
+    """
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return False
+    try:
+        query = text("DELETE FROM archivos_cargados WHERE id = :id")
+        with engine.begin() as conn:
+            result = conn.execute(query, {"id": file_id})
+            return result.rowcount > 0
+    except Exception as e:
+        logger.error(f"Error eliminando archivo con id {file_id}: {e}", exc_info=True)
+        return False
+
+
+def mark_files_as_processed(engine=None):
+    """
+    Marca todos los archivos con estado 'valido' como 'procesado'.
+    Se llama después de un ciclo de re-entrenamiento exitoso.
+    """
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return False
+    try:
+        query = text("""
+            UPDATE archivos_cargados
+            SET estado = 'procesado'
+            WHERE estado = 'valido'
+        """)
+        with engine.begin() as conn:
+            result = conn.execute(query)
+            logger.info(f"Marcados {result.rowcount} archivos como 'procesado'.")
+            return True
+    except Exception as e:
+        logger.error(f"Error marcando archivos como procesados: {e}", exc_info=True)
         return False
 
 

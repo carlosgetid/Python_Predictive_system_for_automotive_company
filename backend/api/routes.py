@@ -8,7 +8,12 @@ import subprocess
 import signal
 
 # Importar lógica BD
-from backend.database.db_utils import get_db_engine, save_dataframe_to_db, get_model_metrics_history, get_active_alerts, update_alert_status, get_db_engine_and_init, get_config_params, update_config_params, reset_db_tables, get_all_users, update_user_email, get_pipeline_interval, set_pipeline_interval
+from backend.database.db_utils import (
+    get_db_engine, save_dataframe_to_db, get_model_metrics_history, get_active_alerts,
+    update_alert_status, get_db_engine_and_init, get_config_params, update_config_params,
+    reset_db_tables, get_all_users, update_user_email, get_pipeline_interval, set_pipeline_interval,
+    register_uploaded_file, get_all_uploaded_files, delete_uploaded_file, mark_files_as_processed
+)
 from backend.services.ingestion_service import ingest_dataframe_to_db, process_excel_file_from_disk
 # --- INICIO DE AGREGADO ---
 # Importamos el Servicio de Ingesta (HU-010) y alertas (HU-007)
@@ -114,13 +119,22 @@ def upload_file():
              logging.warning(f"El archivo '{file.filename}' (o la hoja 'Detalle') está vacío.")
              return jsonify({"error": "El archivo o la hoja 'Detalle' está vacía."}), 400
 
-        # --- BLOQUE 2: Procesamiento y Guardado (REFACTORIZADO) ---
-        # AQUI ESTA EL CAMBIO: En lugar de tener 50 líneas para limpiar y guardar,
-        # llamamos a esta función que hace validación, limpieza Y GUARDADO (save_dataframe_to_db) internamente.
-        
+        # --- BLOQUE 2: Procesamiento y Guardado ---
         success, message, rows_saved = ingest_dataframe_to_db(df, f"Manual_{file.filename}")
 
+        # --- BLOQUE 3: Registrar en archivos_cargados ---
+        cargado_por = "Sistema"
+        if hasattr(request, 'user') and request.user:
+            cargado_por = request.user.get('username', 'Sistema')
+
         if success:
+            register_uploaded_file(
+                nombre_archivo=file.filename,
+                estado='valido',
+                filas_guardadas=rows_saved,
+                mensaje=message,
+                cargado_por=cargado_por
+            )
             summary = {
                 "archivo_recibido": file.filename,
                 "filas_leidas_originales": len(df),
@@ -129,7 +143,13 @@ def upload_file():
             logging.info(f"Datos guardados con éxito. Resumen: {summary}")
             return jsonify({"message": message, "data_summary": summary}), 201
         else:
-            # El servicio devuelve el mensaje de error específico (ej. "Fallo al guardar en BD")
+            register_uploaded_file(
+                nombre_archivo=file.filename,
+                estado='invalido',
+                filas_guardadas=0,
+                mensaje=message,
+                cargado_por=cargado_por
+            )
             logging.error(f"Fallo en el procesamiento del servicio: {message}")
             return jsonify({"error": message}), 400
 
@@ -330,7 +350,10 @@ def trigger_retraining():
         
         logging.info("Modelos recargados en vivo con éxito.")
         
-        # 3. Devolver éxito y métricas al frontend
+        # 3a. Marcar archivos como 'procesado' ahora que el modelo los usó
+        mark_files_as_processed()
+        
+        # 3b. Devolver éxito y métricas al frontend
         return jsonify({
             "message": "Re-entrenamiento completado y modelos recargados en vivo con éxito.",
             "metrics": training_results.get("metrics", {}),
@@ -341,6 +364,33 @@ def trigger_retraining():
         # Captura de error general para el endpoint
         logging.error(f"Error inesperado durante /trigger_retraining: {e}", exc_info=True)
         return jsonify({"error": f"Error interno del servidor durante el re-entrenamiento: {str(e)}"}), 500
+
+# --- Endpoint: Registro de Archivos Cargados ---
+@api_bp.route('/api/v1/files', methods=['GET'])
+def list_uploaded_files():
+    """Retorna todos los archivos registrados en archivos_cargados."""
+    try:
+        files = get_all_uploaded_files()
+        return jsonify(files), 200
+    except Exception as e:
+        logging.error(f"Error en GET /api/v1/files: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v1/files/<int:file_id>', methods=['DELETE'])
+def delete_file_record(file_id):
+    """
+    Elimina el registro del archivo de la tabla archivos_cargados.
+    NOTA: Los datos de ventas_detalle ya ingresados NO se eliminan.
+    """
+    try:
+        success = delete_uploaded_file(file_id)
+        if success:
+            return jsonify({"message": f"Registro del archivo #{file_id} eliminado."}), 200
+        else:
+            return jsonify({"error": "Registro no encontrado o ya fue eliminado."}), 404
+    except Exception as e:
+        logging.error(f"Error en DELETE /api/v1/files/{file_id}: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 # --- Endpoint 7: Obtener Historial de Métricas (HU-011) ---
 @api_bp.route('/api/v1/metrics', methods=['GET'])
