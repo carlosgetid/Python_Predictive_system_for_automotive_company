@@ -41,10 +41,11 @@ if 'authenticated' not in st.session_state:
 
 # --- DEFINICIÓN DE PÁGINAS ---
 page_inicio = st.Page("pages/0_Dashboard.py", title="Inicio", icon="🏠", default=True)
-page_carga = st.Page("pages/1_Carga_de_Datos.py", title="Carga de Datos")
-page_admin = st.Page("pages/2_Administracion.py", title="Administracion")
-page_vis = st.Page("pages/3_Visualizacion_de_Prediccion.py", title="Visualizacion de Prediccion")
-page_config = st.Page("pages/4_Configuracion.py", title="Configuracion")
+page_carga  = st.Page("pages/1_Carga_de_Datos.py",   title="Carga de Datos")
+page_ingesta= st.Page("pages/2_Ingesta_de_Datos.py",  title="Ingesta de Datos")
+page_admin  = st.Page("pages/2_Administracion.py",    title="Administracion")
+page_vis    = st.Page("pages/3_Visualizacion_de_Prediccion.py", title="Visualizacion de Prediccion")
+page_config = st.Page("pages/4_Configuracion.py",     title="Configuracion")
 
 # El login será la página por defecto cuando no haya sesión
 page_login = st.Page("pages/login.py", title="Login", default=True)
@@ -56,5 +57,5 @@ if not st.session_state.authenticated:
 else:
     with st.sidebar:
         render_sidebar_profile()
-    pg = st.navigation([page_inicio, page_carga, page_admin, page_vis, page_config])
+    pg = st.navigation([page_inicio, page_carga, page_ingesta, page_admin, page_vis, page_config])
     pg.run()

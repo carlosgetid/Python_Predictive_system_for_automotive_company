@@ -121,35 +121,27 @@ def ingest_dataframe_to_db(df: pd.DataFrame, source_name: str, engine: Optional[
         logger.critical(f"Excepción no controlada guardando '{source_name}': {e}", exc_info=True)
         return False, f"Error interno: {str(e)}", 0
 
-def process_excel_file_from_disk(file_path: str, engine: Optional[Engine] = None) -> bool:
+def process_excel_file_from_disk(file_path: str, engine=None) -> bool:
     """
-    Función específica para la HU-010 (Ingesta Automatizada desde disco).
-    Lee el archivo del sistema de archivos y delega el procesamiento.
-    
-    Args:
-        file_path: Ruta absoluta al archivo.
-        
-    Returns:
-        bool: True si todo el proceso fue exitoso.
+    Lee un archivo Excel del disco y lo ingesta en ventas_detalle.
+    Usado para carga batch desde carpetas en disco (uso futuro/externo).
+    El registro en archivos_cargados es responsabilidad del llamador.
     """
     filename = os.path.basename(file_path)
     logger.info(f"Iniciando procesamiento de archivo en disco: {filename}")
 
     try:
-        # Lectura específica con openpyxl para archivos .xlsx
-        # Nota: 'sheet_name' debe coincidir con el formato de la empresa
         df_raw = pd.read_excel(file_path, sheet_name='Detalle', engine='openpyxl')
-        
+
         if df_raw.empty:
             logger.warning(f"El archivo '{filename}' está vacío o la hoja 'Detalle' no tiene datos.")
             return False
 
-        # Delegar la lógica de negocio a la función centralizada
         success, msg, _ = ingest_dataframe_to_db(df_raw, filename, engine)
-        
+
         if not success:
             logger.error(f"Fallo en la ingesta de '{filename}': {msg}")
-            
+
         return success
 
     except ValueError as ve:

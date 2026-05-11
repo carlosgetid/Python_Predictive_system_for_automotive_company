@@ -1,23 +1,37 @@
 #!/bin/bash
 # Worker para gatillar el Job de generación de alertas diarias
-# Ideal para ser ejecutado vía Cronjob, o mediante este loop integrado.
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LOG_FILE="$SCRIPT_DIR/logs/alerts.log"
+INTERVAL_FILE="$SCRIPT_DIR/pids/worker_alerts.interval"
 API_URL="http://localhost:5000/api/jobs/generate-alerts"
 
 mkdir -p "$SCRIPT_DIR/logs"
+mkdir -p "$SCRIPT_DIR/pids"
 
-echo "[$(date)] --- Iniciando Worker de Alertas (3 min) ---" >> "$LOG_FILE"
+# Intervalo por defecto: 3 minutos
+DEFAULT_MINUTES=3
+
+echo "[$(date)] --- Iniciando Worker de Alertas ---" >> "$LOG_FILE"
 
 while true; do
-    echo "[$(date)] Ejecutando verificación de Alertas (HU-007 & HU-012)..." >> "$LOG_FILE"
-    
-    # Hacemos la peticion POST en background
+    # Leer intervalo actual (en minutos) desde el archivo de config
+    if [ -f "$INTERVAL_FILE" ]; then
+        SLEEP_MINUTES=$(cat "$INTERVAL_FILE" 2>/dev/null)
+    else
+        SLEEP_MINUTES=$DEFAULT_MINUTES
+    fi
+
+    # Validar que sea un número positivo
+    if ! [[ "$SLEEP_MINUTES" =~ ^[0-9]+$ ]] || [ "$SLEEP_MINUTES" -lt 1 ]; then
+        SLEEP_MINUTES=$DEFAULT_MINUTES
+    fi
+
+    SLEEP_SECONDS=$((SLEEP_MINUTES * 60))
+
+    echo "[$(date)] Ejecutando verificación de Alertas (HU-007 & HU-012) — intervalo: ${SLEEP_MINUTES} min..." >> "$LOG_FILE"
     response=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL")
-    
     echo "[$(date)] Respuesta del backend: $response" >> "$LOG_FILE"
-    
-    # Dormir por 180 segundos (3 minutos)
-    sleep 180
+
+    sleep "$SLEEP_SECONDS"
 done

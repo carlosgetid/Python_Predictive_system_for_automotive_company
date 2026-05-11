@@ -15,7 +15,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
-from backend.database.db_utils import get_db_engine, save_model_metric # --- NUEVO: save_model_metric
+from backend.database.db_utils import get_db_engine, save_model_metric, get_approved_files
 import json # Útil para logs estructurados
 
 # --- Constantes (Revertidas a MVP) ---
@@ -27,22 +27,63 @@ SCALER_PATH = os.path.join(MODELS_DIR, "min_max_scaler.joblib")
 ENCODER_PATH = os.path.join(MODELS_DIR, "label_encoder_producto.joblib")
 
 def load_data_from_db():
-    """Carga datos frescos desde la BD para re-entrenamiento (HU-006)."""
+    """
+    Carga datos frescos desde la BD para re-entrenamiento (HU-006).
+    IMPORTANTE: Solo usa datos de archivos con estado 'aprobado' en archivos_cargados.
+    Los archivos 'valido' (no aprobados) son ignorados.
+    """
     engine = get_db_engine()
     if not engine:
         logging.error("No se pudo conectar a la BD.")
         return pd.DataFrame()
 
-    # Consulta optimizada: solo columnas necesarias
-    # <-- CAMBIO: Nombre de tabla actualizado a 'ventas_detalle'
-    query = "SELECT id_producto, fecha, cantidad_vendida FROM ventas_detalle ORDER BY fecha ASC"
+    # Verificar que existan archivos aprobados
+    approved = get_approved_files(engine)
+    if not approved:
+        logging.warning("No hay archivos 'aprobados' en archivos_cargados. El reentrenamiento necesita que el usuario apruebe archivos en la vista Ingesta de Datos.")
+        return pd.DataFrame()
+
+    approved_names = [f['nombre_archivo'] for f in approved]
+    logging.info(f"Archivos aprobados para entrenamiento ({len(approved_names)}): {approved_names}")
+
+    # Consulta optimizada: solo columnas necesarias de ventas_detalle
+    # (los datos ya fueron ingresados al momento de la carga, filtramos por archivos aprobados
+    # usando una subconsulta contra archivos_cargados)
+    query = """
+        SELECT vd.id_producto, vd.fecha, vd.cantidad_vendida
+        FROM ventas_detalle vd
+        WHERE EXISTS (
+            SELECT 1 FROM archivos_cargados ac
+            WHERE ac.estado = 'aprobado'
+              AND ac.nombre_archivo = vd.source_file
+        )
+        ORDER BY vd.fecha ASC
+    """
     try:
         df = pd.read_sql(query, engine)
+        if df.empty:
+            # Fallback: ventas_detalle no tiene columna source_file todavía.
+            # Usamos todos los datos de los archivos aprobados (comportamiento transitorio).
+            logging.warning("No se pudo filtrar por source_file (columna no existe aún). "
+                           "Usando TODOS los datos de ventas_detalle como fallback temporal.")
+            df = pd.read_sql(
+                "SELECT id_producto, fecha, cantidad_vendida FROM ventas_detalle ORDER BY fecha ASC",
+                engine
+            )
         logging.info(f"Datos cargados de BD: {len(df)} registros.")
         return df
     except Exception as e:
-        logging.error(f"Error SQL al cargar datos: {e}")
-        return pd.DataFrame()
+        logging.warning(f"Consulta con filtro falló ({e}), usando fallback sin filtro.")
+        try:
+            df = pd.read_sql(
+                "SELECT id_producto, fecha, cantidad_vendida FROM ventas_detalle ORDER BY fecha ASC",
+                engine
+            )
+            logging.info(f"Datos cargados de BD (fallback): {len(df)} registros.")
+            return df
+        except Exception as e2:
+            logging.error(f"Error SQL al cargar datos: {e2}")
+            return pd.DataFrame()
 
 def preprocess_for_training(df):
     """

@@ -93,7 +93,11 @@ def initialize_db(engine):
                     smtp_pass VARCHAR(255) DEFAULT '',
                     email_remitente VARCHAR(255) DEFAULT 'alertas@predictivo.auto',
                     email_destinatario_alertas VARCHAR(255) DEFAULT '',
-                    perfil_destinatario_alertas VARCHAR(255) DEFAULT ''
+                    perfil_destinatario_alertas VARCHAR(255) DEFAULT '',
+                    pipeline_interval_ingestion INT DEFAULT 1,
+                    pipeline_interval_retraining INT DEFAULT 3,
+                    pipeline_interval_metrics INT DEFAULT 5,
+                    pipeline_interval_alerts INT DEFAULT 3
                 );
             """))
             
@@ -103,6 +107,19 @@ def initialize_db(engine):
                 conn.execute(text("""
                     INSERT INTO configuracion_sistema (smtp_host, smtp_port) VALUES ('smtp.gmail.com', 587)
                 """))
+
+            # Migración segura: añadir columnas de intervalos si no existen (para DBs ya existentes)
+            interval_columns = {
+                "pipeline_interval_ingestion":  "INT DEFAULT 1",
+                "pipeline_interval_retraining": "INT DEFAULT 3",
+                "pipeline_interval_metrics":    "INT DEFAULT 5",
+                "pipeline_interval_alerts":     "INT DEFAULT 3",
+            }
+            for col_name, col_def in interval_columns.items():
+                try:
+                    conn.execute(text(f"ALTER TABLE configuracion_sistema ADD COLUMN IF NOT EXISTS {col_name} {col_def};"))
+                except Exception as alt_e:
+                    logger.warning(f"No se pudo añadir columna {col_name}: {alt_e}")
                 
             # Agregar columna correo_electronico a tabla usuarios si no existe
             try:
@@ -111,6 +128,19 @@ def initialize_db(engine):
             except Exception as col_e:
                 logger.warning(f"No se pudo verificar/crear la columna correo_electronico: {col_e}")
                 
+            # Tabla de registro de archivos cargados
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS archivos_cargados (
+                    id SERIAL PRIMARY KEY,
+                    nombre_archivo VARCHAR(512) NOT NULL,
+                    fecha_carga TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    estado VARCHAR(20) DEFAULT 'valido',
+                    filas_guardadas INTEGER DEFAULT 0,
+                    mensaje TEXT,
+                    cargado_por VARCHAR(100)
+                );
+            """))
+
             logger.info("Tablas de sistema verificadas/creadas con éxito.")
     except Exception as e:
         logger.error(f"Error al inicializar la base de datos: {e}")
@@ -405,10 +435,16 @@ def update_config_params(data: dict, engine=None):
         return False
 
 def reset_db_tables(engine=None):
-    """Trunca las tablas del sistema (ventas_detalle y entrenamiento)."""
-    if engine is None: 
+    """
+    Trunca las tablas de datos del sistema:
+    - ventas_detalle   (histórico de ventas)
+    - entrenamiento    (métricas de modelos)
+    - archivos_cargados (registro de archivos Excel)
+    """
+    if engine is None:
         engine = get_db_engine()
-    if engine is None: return False, "No se pudo conectar a la base de datos."
+    if engine is None:
+        return False, "No se pudo conectar a la base de datos."
 
     try:
         with engine.connect() as conn:
@@ -417,10 +453,15 @@ def reset_db_tables(engine=None):
             try:
                 conn.execute(text("TRUNCATE TABLE entrenamiento RESTART IDENTITY CASCADE;"))
             except Exception:
-                logger.info("Tabla entrenamiento no existía (no pasa nada).")
+                logger.info("Tabla entrenamiento no existía (se omite).")
+            try:
+                conn.execute(text("TRUNCATE TABLE archivos_cargados RESTART IDENTITY CASCADE;"))
+                logger.info("Tabla archivos_cargados limpiada.")
+            except Exception:
+                logger.info("Tabla archivos_cargados no existía (se omite).")
             conn.commit()
             logger.info("Tablas limpiadas exitosamente.")
-            return True, "Tablas limpiadas exitosamente."
+            return True, "Base de datos limpiada: ventas_detalle, entrenamiento y archivos_cargados vaciados."
     except Exception as e:
         logger.error(f"Error crítico limpiando tablas: {e}", exc_info=True)
         return False, str(e)
@@ -468,4 +509,270 @@ def update_user_email(user_id: int, email: str, engine=None):
             return False
     except Exception as e:
         logger.error(f"Error al actualizar correo de usuario {user_id}: {e}", exc_info=True)
+        return False
+
+
+# --- FUNCIONES DE REGISTRO DE ARCHIVOS CARGADOS ---
+
+def register_uploaded_file(nombre_archivo: str, estado: str, filas_guardadas: int,
+                           mensaje: str = "", cargado_por: str = "Sistema", engine=None):
+    """
+    Registra un archivo procesado en la tabla archivos_cargados.
+    estado: 'valido' | 'invalido' | 'procesado'
+    """
+    if engine is None:
+        engine = get_db_engine_and_init()
+    if engine is None:
+        return None
+    try:
+        query = text("""
+            INSERT INTO archivos_cargados
+                (nombre_archivo, estado, filas_guardadas, mensaje, cargado_por)
+            VALUES
+                (:nombre, :estado, :filas, :mensaje, :cargado_por)
+            RETURNING id
+        """)
+        with engine.begin() as conn:
+            result = conn.execute(query, {
+                "nombre": nombre_archivo,
+                "estado": estado,
+                "filas": filas_guardadas,
+                "mensaje": mensaje,
+                "cargado_por": cargado_por,
+            })
+            row = result.fetchone()
+            return row[0] if row else None
+    except Exception as e:
+        logger.error(f"Error registrando archivo '{nombre_archivo}': {e}", exc_info=True)
+        return None
+
+
+def get_all_uploaded_files(engine=None):
+    """Retorna todos los archivos registrados, ordenados por fecha desc."""
+    if engine is None:
+        engine = get_db_engine_and_init()
+    if engine is None:
+        return []
+    try:
+        query = text("""
+            SELECT id, nombre_archivo, fecha_carga, estado, filas_guardadas, mensaje, cargado_por
+            FROM archivos_cargados
+            ORDER BY fecha_carga DESC
+        """)
+        with engine.connect() as conn:
+            rows = conn.execute(query).fetchall()
+            files = []
+            for row in rows:
+                d = dict(row._mapping)
+                if d.get('fecha_carga'):
+                    d['fecha_carga'] = d['fecha_carga'].strftime('%Y-%m-%d %H:%M')
+                files.append(d)
+            return files
+    except Exception as e:
+        logger.error(f"Error obteniendo archivos cargados: {e}", exc_info=True)
+        return []
+
+
+def delete_uploaded_file(file_id: int, engine=None):
+    """
+    Elimina el registro de un archivo de la tabla archivos_cargados.
+    NO elimina los datos de ventas_detalle ya guardados.
+    """
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return False
+    try:
+        query = text("DELETE FROM archivos_cargados WHERE id = :id")
+        with engine.begin() as conn:
+            result = conn.execute(query, {"id": file_id})
+            return result.rowcount > 0
+    except Exception as e:
+        logger.error(f"Error eliminando archivo con id {file_id}: {e}", exc_info=True)
+        return False
+
+
+def update_file_status(file_id: int, new_status: str, engine=None):
+    """
+    Actualiza el estado de un archivo registrado.
+    Estados válidos: 'valido', 'aprobado', 'procesado', 'invalido'
+    """
+    VALID_STATUSES = {'valido', 'aprobado', 'procesado', 'invalido'}
+    if new_status not in VALID_STATUSES:
+        logger.error(f"Estado inválido: {new_status}")
+        return False
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return False
+    try:
+        query = text("""
+            UPDATE archivos_cargados
+            SET estado = :estado
+            WHERE id = :id
+        """)
+        with engine.begin() as conn:
+            result = conn.execute(query, {"estado": new_status, "id": file_id})
+            return result.rowcount > 0
+    except Exception as e:
+        logger.error(f"Error actualizando estado del archivo {file_id}: {e}", exc_info=True)
+        return False
+
+
+def mark_files_as_processed(engine=None):
+    """
+    Marca los archivos con estado 'aprobado' como 'procesado'.
+    Solo los archivos aprobados explícitamente participan en el entrenamiento.
+    Los archivos en estado 'valido' NO se tocan.
+    Se llama después de un ciclo de re-entrenamiento exitoso.
+    """
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return False
+    try:
+        query = text("""
+            UPDATE archivos_cargados
+            SET estado = 'procesado'
+            WHERE estado = 'aprobado'
+        """)
+        with engine.begin() as conn:
+            result = conn.execute(query)
+            logger.info(f"Marcados {result.rowcount} archivos 'aprobado' -> 'procesado'.")
+            return True
+    except Exception as e:
+        logger.error(f"Error marcando archivos como procesados: {e}", exc_info=True)
+        return False
+
+
+def get_approved_files(engine=None):
+    """Retorna solo los archivos con estado 'aprobado' (listos para entrenamiento)."""
+    if engine is None:
+        engine = get_db_engine_and_init()
+    if engine is None:
+        return []
+    try:
+        query = text("""
+            SELECT id, nombre_archivo, fecha_carga, filas_guardadas
+            FROM archivos_cargados
+            WHERE estado = 'aprobado'
+            ORDER BY fecha_carga ASC
+        """)
+        with engine.connect() as conn:
+            rows = conn.execute(query).fetchall()
+            files = []
+            for row in rows:
+                d = dict(row._mapping)
+                if d.get('fecha_carga'):
+                    d['fecha_carga'] = d['fecha_carga'].strftime('%Y-%m-%d %H:%M')
+                files.append(d)
+            return files
+    except Exception as e:
+        logger.error(f"Error obteniendo archivos aprobados: {e}", exc_info=True)
+        return []
+
+
+def auto_approve_valid_files(engine=None):
+    """
+    Responsabilidad exclusiva del pipeline 'Ingesta de Datos':
+    Promueve TODOS los archivos en estado 'valido' a 'aprobado'.
+
+    No toca archivos 'invalido', 'aprobado' ni 'procesado'.
+
+    Returns:
+        (promoted: int, message: str)
+    """
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return 0, "No se pudo conectar a la base de datos."
+    try:
+        query = text("""
+            UPDATE archivos_cargados
+            SET estado = 'aprobado'
+            WHERE estado = 'valido'
+        """)
+        with engine.begin() as conn:
+            result = conn.execute(query)
+            promoted = result.rowcount
+        logger.info(f"Pipeline Ingesta: {promoted} archivo(s) promovidos de 'valido' a 'aprobado'.")
+        return promoted, f"{promoted} archivo(s) aprobado(s) automáticamente."
+    except Exception as e:
+        logger.error(f"Error en auto_approve_valid_files: {e}", exc_info=True)
+        return 0, str(e)
+
+# --- FUNCIONES DE INTERVALOS DE PIPELINE ---
+
+PIPELINE_INTERVAL_COLUMNS = {
+    "worker_ingestion":  "pipeline_interval_ingestion",
+    "worker_retraining": "pipeline_interval_retraining",
+    "worker_metrics":    "pipeline_interval_metrics",
+    "worker_alerts":     "pipeline_interval_alerts",
+}
+
+PIPELINE_INTERVAL_DEFAULTS = {
+    "worker_ingestion":  1,
+    "worker_retraining": 3,
+    "worker_metrics":    5,
+    "worker_alerts":     3,
+}
+
+def get_pipeline_intervals(engine=None):
+    """
+    Obtiene los intervalos de ejecución de todos los workers desde la BD.
+    Retorna dict: {worker_id: minutos}
+    """
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return dict(PIPELINE_INTERVAL_DEFAULTS)
+
+    try:
+        cols = ", ".join(PIPELINE_INTERVAL_COLUMNS.values())
+        query = text(f"SELECT {cols} FROM configuracion_sistema LIMIT 1")
+        with engine.connect() as conn:
+            row = conn.execute(query).fetchone()
+            if row:
+                mapping = dict(row._mapping)
+                return {
+                    wid: int(mapping.get(col, PIPELINE_INTERVAL_DEFAULTS[wid]) or PIPELINE_INTERVAL_DEFAULTS[wid])
+                    for wid, col in PIPELINE_INTERVAL_COLUMNS.items()
+                }
+    except Exception as e:
+        logger.error(f"Error obteniendo intervalos de pipeline: {e}", exc_info=True)
+
+    return dict(PIPELINE_INTERVAL_DEFAULTS)
+
+
+def get_pipeline_interval(worker_id: str, engine=None):
+    """
+    Obtiene el intervalo (minutos) de un worker específico desde la BD.
+    """
+    intervals = get_pipeline_intervals(engine)
+    return intervals.get(worker_id, PIPELINE_INTERVAL_DEFAULTS.get(worker_id, 1))
+
+
+def set_pipeline_interval(worker_id: str, minutes: int, engine=None):
+    """
+    Guarda el intervalo (minutos) de un worker en la BD.
+    Retorna True si éxito, False si falla.
+    """
+    col = PIPELINE_INTERVAL_COLUMNS.get(worker_id)
+    if not col:
+        logger.error(f"Worker ID desconocido: {worker_id}")
+        return False
+
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return False
+
+    try:
+        query = text(f"UPDATE configuracion_sistema SET {col} = :minutes")
+        with engine.begin() as conn:
+            conn.execute(query, {"minutes": int(minutes)})
+        logger.info(f"Intervalo de '{worker_id}' actualizado a {minutes} min en BD")
+        return True
+    except Exception as e:
+        logger.error(f"Error guardando intervalo de '{worker_id}' en BD: {e}", exc_info=True)
         return False
