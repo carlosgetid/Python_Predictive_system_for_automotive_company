@@ -435,10 +435,16 @@ def update_config_params(data: dict, engine=None):
         return False
 
 def reset_db_tables(engine=None):
-    """Trunca las tablas del sistema (ventas_detalle y entrenamiento)."""
-    if engine is None: 
+    """
+    Trunca las tablas de datos del sistema:
+    - ventas_detalle   (histórico de ventas)
+    - entrenamiento    (métricas de modelos)
+    - archivos_cargados (registro de archivos Excel)
+    """
+    if engine is None:
         engine = get_db_engine()
-    if engine is None: return False, "No se pudo conectar a la base de datos."
+    if engine is None:
+        return False, "No se pudo conectar a la base de datos."
 
     try:
         with engine.connect() as conn:
@@ -447,10 +453,15 @@ def reset_db_tables(engine=None):
             try:
                 conn.execute(text("TRUNCATE TABLE entrenamiento RESTART IDENTITY CASCADE;"))
             except Exception:
-                logger.info("Tabla entrenamiento no existía (no pasa nada).")
+                logger.info("Tabla entrenamiento no existía (se omite).")
+            try:
+                conn.execute(text("TRUNCATE TABLE archivos_cargados RESTART IDENTITY CASCADE;"))
+                logger.info("Tabla archivos_cargados limpiada.")
+            except Exception:
+                logger.info("Tabla archivos_cargados no existía (se omite).")
             conn.commit()
             logger.info("Tablas limpiadas exitosamente.")
-            return True, "Tablas limpiadas exitosamente."
+            return True, "Base de datos limpiada: ventas_detalle, entrenamiento y archivos_cargados vaciados."
     except Exception as e:
         logger.error(f"Error crítico limpiando tablas: {e}", exc_info=True)
         return False, str(e)
@@ -581,9 +592,38 @@ def delete_uploaded_file(file_id: int, engine=None):
         return False
 
 
+def update_file_status(file_id: int, new_status: str, engine=None):
+    """
+    Actualiza el estado de un archivo registrado.
+    Estados válidos: 'valido', 'aprobado', 'procesado', 'invalido'
+    """
+    VALID_STATUSES = {'valido', 'aprobado', 'procesado', 'invalido'}
+    if new_status not in VALID_STATUSES:
+        logger.error(f"Estado inválido: {new_status}")
+        return False
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return False
+    try:
+        query = text("""
+            UPDATE archivos_cargados
+            SET estado = :estado
+            WHERE id = :id
+        """)
+        with engine.begin() as conn:
+            result = conn.execute(query, {"estado": new_status, "id": file_id})
+            return result.rowcount > 0
+    except Exception as e:
+        logger.error(f"Error actualizando estado del archivo {file_id}: {e}", exc_info=True)
+        return False
+
+
 def mark_files_as_processed(engine=None):
     """
-    Marca todos los archivos con estado 'valido' como 'procesado'.
+    Marca los archivos con estado 'aprobado' como 'procesado'.
+    Solo los archivos aprobados explícitamente participan en el entrenamiento.
+    Los archivos en estado 'valido' NO se tocan.
     Se llama después de un ciclo de re-entrenamiento exitoso.
     """
     if engine is None:
@@ -594,15 +634,42 @@ def mark_files_as_processed(engine=None):
         query = text("""
             UPDATE archivos_cargados
             SET estado = 'procesado'
-            WHERE estado = 'valido'
+            WHERE estado = 'aprobado'
         """)
         with engine.begin() as conn:
             result = conn.execute(query)
-            logger.info(f"Marcados {result.rowcount} archivos como 'procesado'.")
+            logger.info(f"Marcados {result.rowcount} archivos 'aprobado' -> 'procesado'.")
             return True
     except Exception as e:
         logger.error(f"Error marcando archivos como procesados: {e}", exc_info=True)
         return False
+
+
+def get_approved_files(engine=None):
+    """Retorna solo los archivos con estado 'aprobado' (listos para entrenamiento)."""
+    if engine is None:
+        engine = get_db_engine_and_init()
+    if engine is None:
+        return []
+    try:
+        query = text("""
+            SELECT id, nombre_archivo, fecha_carga, filas_guardadas
+            FROM archivos_cargados
+            WHERE estado = 'aprobado'
+            ORDER BY fecha_carga ASC
+        """)
+        with engine.connect() as conn:
+            rows = conn.execute(query).fetchall()
+            files = []
+            for row in rows:
+                d = dict(row._mapping)
+                if d.get('fecha_carga'):
+                    d['fecha_carga'] = d['fecha_carga'].strftime('%Y-%m-%d %H:%M')
+                files.append(d)
+            return files
+    except Exception as e:
+        logger.error(f"Error obteniendo archivos aprobados: {e}", exc_info=True)
+        return []
 
 
 # --- FUNCIONES DE INTERVALOS DE PIPELINE ---

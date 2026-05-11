@@ -12,7 +12,8 @@ from backend.database.db_utils import (
     get_db_engine, save_dataframe_to_db, get_model_metrics_history, get_active_alerts,
     update_alert_status, get_db_engine_and_init, get_config_params, update_config_params,
     reset_db_tables, get_all_users, update_user_email, get_pipeline_interval, set_pipeline_interval,
-    register_uploaded_file, get_all_uploaded_files, delete_uploaded_file, mark_files_as_processed
+    register_uploaded_file, get_all_uploaded_files, delete_uploaded_file,
+    mark_files_as_processed, update_file_status, get_approved_files
 )
 from backend.services.ingestion_service import ingest_dataframe_to_db, process_excel_file_from_disk
 # --- INICIO DE AGREGADO ---
@@ -390,6 +391,36 @@ def delete_file_record(file_id):
             return jsonify({"error": "Registro no encontrado o ya fue eliminado."}), 404
     except Exception as e:
         logging.error(f"Error en DELETE /api/v1/files/{file_id}: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v1/files/<int:file_id>/status', methods=['PUT'])
+def update_file_status_endpoint(file_id):
+    """
+    Actualiza el estado de un archivo registrado.
+    Body JSON: {"estado": "valido" | "aprobado" | "procesado" | "invalido"}
+    """
+    try:
+        data = request.get_json()
+        if not data or 'estado' not in data:
+            return jsonify({"error": "Falta el campo 'estado' en el body."}), 400
+        nuevo_estado = data['estado']
+        success = update_file_status(file_id, nuevo_estado)
+        if success:
+            return jsonify({"message": f"Estado actualizado a '{nuevo_estado}'."}), 200
+        else:
+            return jsonify({"error": "No se pudo actualizar. Verifique el ID y el estado."}), 400
+    except Exception as e:
+        logging.error(f"Error en PUT /api/v1/files/{file_id}/status: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/api/v1/files/approved', methods=['GET'])
+def list_approved_files():
+    """Retorna sólo los archivos con estado 'aprobado' para entrenamiento."""
+    try:
+        files = get_approved_files()
+        return jsonify(files), 200
+    except Exception as e:
+        logging.error(f"Error en GET /api/v1/files/approved: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 # --- Endpoint 7: Obtener Historial de Métricas (HU-011) ---

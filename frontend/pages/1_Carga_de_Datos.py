@@ -97,6 +97,7 @@ USUARIO_ACTUAL = st.session_state.user.get('username', 'Sistema')
 if "uploader_key"      not in st.session_state: st.session_state.uploader_key      = 0
 if "queue"             not in st.session_state: st.session_state.queue             = {}
 if "deleted_filenames" not in st.session_state: st.session_state.deleted_filenames = set()
+if "carga_refresh_key" not in st.session_state: st.session_state.carga_refresh_key = 0
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def fetch_persisted_files():
@@ -120,23 +121,24 @@ def delete_persisted_file(file_id: int):
 def badge_html(estado: str, tooltip: str = "") -> str:
     estado_lower = estado.lower()
     labels = {
-        "valido":    ("✅", "Válido",    "badge-valido"),
+        "valido":    ("📋", "Válido",    "badge-valido"),
+        "aprobado":  ("✅", "Aprobado",  "badge-aprobado"),
         "invalido":  ("❌", "Inválido",  "badge-invalido"),
         "procesado": ("🔬", "Procesado", "badge-procesado"),
     }
-    icon, label, cls = labels.get(estado_lower, ("⏳", "Pendiente", "badge-pendiente"))
+    icon, label, cls = labels.get(estado_lower, ("⏳", estado, "badge-pendiente"))
     title = f'title="{tooltip}"' if tooltip else ""
     return f'<span class="badge {cls}" {title}>{icon} {label}</span>'
 
 # ── Cabecera ───────────────────────────────────────────────────────────────────
 st.markdown(
-    '<h1 style="color:#0F2942;margin-bottom:4px;">📄 Ingesta de Datos Transaccionales</h1>',
+    '<h1 style="color:#0F2942;margin-bottom:4px;">📂 Carga de Datos</h1>',
     unsafe_allow_html=True
 )
 st.markdown(
     '<p style="color:#64748B;font-size:15px;margin-bottom:20px;">'
     'Gestione los archivos Excel corporativos cargados en el sistema. '
-    'Los archivos <b>Válidos</b> son elegibles para el entrenamiento del modelo.</p>',
+    'Los archivos <b>Válidos</b> pueden ser aprobados para entrenamiento en la vista <b>Ingesta de Datos</b>.</p>',
     unsafe_allow_html=True
 )
 
@@ -163,8 +165,13 @@ if not MOSTRAR_CARGA_MANUAL:
 with st.container(border=True):
     col_title, col_refresh = st.columns([9, 1])
     col_title.markdown('<p class="stitle">📁 Archivos en el Sistema</p>', unsafe_allow_html=True)
-    if col_refresh.button("🔄", help="Actualizar lista", key="btn_refresh"):
+    if col_refresh.button("🔄", help="Actualizar lista desde la base de datos", key="btn_refresh"):
+        st.session_state.carga_refresh_key += 1  # fuerza refresco real
         st.rerun()
+
+    # carga_refresh_key se usa como «trigger» para que Streamlit
+    # siempre refetch los datos cuando cambia
+    _ = st.session_state.carga_refresh_key
 
     st.markdown(
         '<div class="info-box">ℹ️ Esta lista muestra los archivos registrados en la base de datos. '
