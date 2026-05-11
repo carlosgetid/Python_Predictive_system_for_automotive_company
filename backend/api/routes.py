@@ -3,10 +3,12 @@ import pandas as pd
 import shutil  # <--- AGREGAR ESTA LÍNEA
 from flask import Blueprint, request, jsonify
 import datetime 
-import os 
+import os
+import subprocess
+import signal
 
 # Importar lógica BD
-from backend.database.db_utils import get_db_engine, save_dataframe_to_db, get_model_metrics_history, get_active_alerts, update_alert_status, get_db_engine_and_init, get_config_params, update_config_params, reset_db_tables, get_all_users, update_user_email
+from backend.database.db_utils import get_db_engine, save_dataframe_to_db, get_model_metrics_history, get_active_alerts, update_alert_status, get_db_engine_and_init, get_config_params, update_config_params, reset_db_tables, get_all_users, update_user_email, get_pipeline_interval, set_pipeline_interval
 from backend.services.ingestion_service import ingest_dataframe_to_db, process_excel_file_from_disk
 # --- INICIO DE AGREGADO ---
 # Importamos el Servicio de Ingesta (HU-010) y alertas (HU-007)
@@ -603,5 +605,324 @@ def update_email_endpoint(user_id):
     except Exception as e:
         logging.error(f"Error en PUT /api/v1/users/{user_id}/email: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
+# PIPELINE MANAGER — Control de Workers desde la UI
+# ============================================================
+
+SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "scripts")
+SCRIPTS_DIR = os.path.normpath(SCRIPTS_DIR)
+
+WORKERS = [
+    {"id": "worker_ingestion",   "script": "worker_ingestion.sh",   "label": "Ingesta de Datos",    "log": "ingestion.log",   "default_interval": 30},
+    {"id": "worker_retraining",  "script": "worker_retraining.sh",  "label": "Reentrenamiento ML",  "log": "retraining.log",  "default_interval": 60},
+    {"id": "worker_metrics",     "script": "worker_metrics.sh",     "label": "Métricas",            "log": "metrics.log",    "default_interval": 300},
+    {"id": "worker_alerts",      "script": "worker_alerts.sh",      "label": "Alertas",             "log": "alerts.log",     "default_interval": 180},
+]
+
+def _get_pid_file(worker_id):
+    return os.path.join(SCRIPTS_DIR, "pids", f"{worker_id}.sh.pid")
+
+def _is_running(worker_id):
+    pid_file = _get_pid_file(worker_id)
+    if not os.path.exists(pid_file):
+        return False
+    try:
+        with open(pid_file) as f:
+            pid = int(f.read().strip())
+        os.kill(pid, 0)  # Signal 0: solo verifica si el proceso existe
+        return True
+    except (ProcessLookupError, ValueError, OSError):
+        # El proceso no existe, limpiar el archivo PID stale
+        try:
+            os.remove(pid_file)
+        except Exception:
+            pass
+        return False
+
+def _get_pid(worker_id):
+    pid_file = _get_pid_file(worker_id)
+    try:
+        with open(pid_file) as f:
+            return int(f.read().strip())
+    except Exception:
+        return None
+
+
+@api_bp.route('/api/v1/pipeline/status', methods=['GET'])
+def pipeline_status():
+    """Retorna el estado de todos los workers del pipeline."""
+    result = []
+    for w in WORKERS:
+        running = _is_running(w["id"])
+        pid = _get_pid(w["id"]) if running else None
+        result.append({
+            "id": w["id"],
+            "label": w["label"],
+            "script": w["script"],
+            "running": running,
+            "pid": pid,
+            "log": w["log"],
+            "default_interval": w["default_interval"]
+        })
+    return jsonify(result), 200
+
+
+@api_bp.route('/api/v1/pipeline/<worker_id>/start', methods=['POST'])
+def pipeline_start_worker(worker_id):
+    """Inicia un worker específico usando nohup (persiste más allá del proceso padre)."""
+    worker = next((w for w in WORKERS if w["id"] == worker_id), None)
+    if not worker:
+        return jsonify({"error": f"Worker '{worker_id}' no encontrado"}), 404
+
+    if _is_running(worker_id):
+        pid = _get_pid(worker_id)
+        return jsonify({"message": f"Worker ya está corriendo", "pid": pid}), 200
+
+    try:
+        script_path = os.path.join(SCRIPTS_DIR, worker["script"])
+        pid_file = _get_pid_file(worker_id)
+        log_file = os.path.join(SCRIPTS_DIR, "logs", worker["log"])
+
+        # Asegurar que el script sea ejecutable
+        os.chmod(script_path, 0o755)
+        os.makedirs(os.path.dirname(pid_file), exist_ok=True)
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+        # Iniciar con nohup para que sobreviva el proceso padre
+        process = subprocess.Popen(
+            ["bash", script_path],
+            stdout=open(log_file, 'a'),
+            stderr=subprocess.STDOUT,
+            preexec_fn=os.setsid,  # Nuevo grupo de procesos (sobrevive recargas)
+            close_fds=True
+        )
+
+        with open(pid_file, 'w') as f:
+            f.write(str(process.pid))
+
+        logging.info(f"Pipeline: Worker '{worker_id}' iniciado con PID {process.pid}")
+        worker_label = worker['label']
+        return jsonify({"message": f"Worker '{worker_label}' iniciado", "pid": process.pid}), 200
+
+    except Exception as e:
+        logging.error(f"Error iniciando worker '{worker_id}': {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/api/v1/pipeline/<worker_id>/stop', methods=['POST'])
+def pipeline_stop_worker(worker_id):
+    """Detiene un worker específico enviando SIGTERM al grupo de procesos."""
+    worker = next((w for w in WORKERS if w["id"] == worker_id), None)
+    if not worker:
+        return jsonify({"error": f"Worker '{worker_id}' no encontrado"}), 404
+
+    if not _is_running(worker_id):
+        return jsonify({"message": "Worker ya estaba detenido"}), 200
+
+    try:
+        pid = _get_pid(worker_id)
+        pid_file = _get_pid_file(worker_id)
+
+        # Terminar el grupo de procesos completo
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass  # Ya terminó
+
+        # Limpiar el archivo PID
+        if os.path.exists(pid_file):
+            os.remove(pid_file)
+
+        logging.info(f"Pipeline: Worker '{worker_id}' (PID {pid}) detenido")
+        worker_label = worker['label']
+        return jsonify({"message": f"Worker '{worker_label}' detenido", "pid": pid}), 200
+
+    except Exception as e:
+        logging.error(f"Error deteniendo worker '{worker_id}': {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/api/v1/pipeline/<worker_id>/logs', methods=['GET'])
+def pipeline_get_logs(worker_id):
+    """Retorna las últimas N líneas del log de un worker."""
+    worker = next((w for w in WORKERS if w["id"] == worker_id), None)
+    if not worker:
+        return jsonify({"error": f"Worker '{worker_id}' no encontrado"}), 404
+
+    lines = int(request.args.get('lines', 50))
+    log_file = os.path.join(SCRIPTS_DIR, "logs", worker["log"])
+
+    if not os.path.exists(log_file):
+        return jsonify({"logs": [], "worker": worker_id}), 200
+
+    try:
+        with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
+            all_lines = f.readlines()
+        last_lines = [l.rstrip('\n') for l in all_lines[-lines:]]
+        return jsonify({"logs": last_lines, "worker": worker_id, "total_lines": len(all_lines)}), 200
+    except Exception as e:
+        logging.error(f"Error leyendo logs de '{worker_id}': {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/api/v1/pipeline/start-all', methods=['POST'])
+def pipeline_start_all():
+    """Inicia todos los workers del pipeline."""
+    results = []
+    for w in WORKERS:
+        try:
+            if _is_running(w["id"]):
+                results.append({"id": w["id"], "status": "already_running", "pid": _get_pid(w["id"])})
+                continue
+
+            script_path = os.path.join(SCRIPTS_DIR, w["script"])
+            pid_file = _get_pid_file(w["id"])
+            log_file = os.path.join(SCRIPTS_DIR, "logs", w["log"])
+
+            os.chmod(script_path, 0o755)
+            os.makedirs(os.path.dirname(pid_file), exist_ok=True)
+            os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+            process = subprocess.Popen(
+                ["bash", script_path],
+                stdout=open(log_file, 'a'),
+                stderr=subprocess.STDOUT,
+                preexec_fn=os.setsid,
+                close_fds=True
+            )
+            with open(pid_file, 'w') as f:
+                f.write(str(process.pid))
+
+            results.append({"id": w["id"], "status": "started", "pid": process.pid})
+        except Exception as e:
+            results.append({"id": w["id"], "status": "error", "error": str(e)})
+
+    return jsonify({"message": "Comando ejecutado", "results": results}), 200
+
+
+@api_bp.route('/api/v1/pipeline/stop-all', methods=['POST'])
+def pipeline_stop_all():
+    """Detiene todos los workers del pipeline."""
+    results = []
+    for w in WORKERS:
+        try:
+            if not _is_running(w["id"]):
+                results.append({"id": w["id"], "status": "already_stopped"})
+                continue
+
+            pid = _get_pid(w["id"])
+            pid_file = _get_pid_file(w["id"])
+
+            try:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+            if os.path.exists(pid_file):
+                os.remove(pid_file)
+
+            results.append({"id": w["id"], "status": "stopped", "pid": pid})
+        except Exception as e:
+            results.append({"id": w["id"], "status": "error", "error": str(e)})
+
+    return jsonify({"message": "Comando ejecutado", "results": results}), 200
+
+
+# ── Intervalos de ejecución ───────────────────────────────────────────────────
+
+WORKER_DEFAULT_MINUTES = {
+    "worker_ingestion":  1,
+    "worker_retraining": 3,
+    "worker_metrics":    5,
+    "worker_alerts":     3,
+}
+
+def _get_interval_file(worker_id):
+    return os.path.join(SCRIPTS_DIR, "pids", f"{worker_id}.interval")
+
+def _read_interval_minutes(worker_id):
+    """Lee el intervalo guardado (minutos). Devuelve el default si no existe."""
+    path = _get_interval_file(worker_id)
+    default = WORKER_DEFAULT_MINUTES.get(worker_id, 1)
+    if not os.path.exists(path):
+        return default
+    try:
+        with open(path) as f:
+            val = int(f.read().strip())
+        return val if val >= 1 else default
+    except Exception:
+        return default
+
+def _write_interval_minutes(worker_id, minutes):
+    """Escribe el intervalo (minutos) en el archivo de config del worker."""
+    path = _get_interval_file(worker_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w') as f:
+        f.write(str(int(minutes)))
+
+
+@api_bp.route('/api/v1/pipeline/<worker_id>/interval', methods=['GET'])
+def pipeline_get_interval(worker_id):
+    """Retorna el intervalo de ejecución actual del worker (en minutos) desde la BD."""
+    worker = next((w for w in WORKERS if w["id"] == worker_id), None)
+    if not worker:
+        return jsonify({"error": f"Worker '{worker_id}' no encontrado"}), 404
+
+    minutes = get_pipeline_interval(worker_id)
+    return jsonify({"worker": worker_id, "minutes": minutes}), 200
+
+
+@api_bp.route('/api/v1/pipeline/<worker_id>/interval', methods=['POST'])
+def pipeline_set_interval(worker_id):
+    """
+    Establece la frecuencia de ejecución de un worker.
+    Body JSON: {"minutes": N}  (N entero >= 1)
+    Persiste en la BD y sincroniza el archivo .interval para los scripts bash.
+    El cambio aplica en el próximo ciclo del worker sin reiniciarlo.
+    """
+    worker = next((w for w in WORKERS if w["id"] == worker_id), None)
+    if not worker:
+        return jsonify({"error": f"Worker '{worker_id}' no encontrado"}), 404
+
+    data = request.get_json()
+    if not data or "minutes" not in data:
+        return jsonify({"error": "Se requiere el campo 'minutes' en el body"}), 400
+
+    try:
+        minutes = int(data["minutes"])
+    except (ValueError, TypeError):
+        return jsonify({"error": "'minutes' debe ser un entero"}), 400
+
+    if minutes < 1:
+        return jsonify({"error": "'minutes' debe ser >= 1"}), 400
+
+    try:
+        # 1. Persistir en la base de datos (fuente de verdad)
+        db_ok = set_pipeline_interval(worker_id, minutes)
+
+        # 2. Sincronizar el archivo .interval para que el bash script lo lea
+        #    (fallback en caso de que la BD no esté disponible al arrancar)
+        try:
+            _write_interval_minutes(worker_id, minutes)
+        except Exception as file_err:
+            logging.warning(f"No se pudo escribir archivo .interval de '{worker_id}': {file_err}")
+
+        worker_label = worker['label']
+        if db_ok:
+            logging.info(f"Pipeline: Intervalo de '{worker_id}' actualizado a {minutes} min (BD + archivo)")
+            return jsonify({
+                "message": f"Intervalo de '{worker_label}' actualizado a {minutes} minuto(s). Aplica en el próximo ciclo.",
+                "worker": worker_id,
+                "minutes": minutes
+            }), 200
+        else:
+            return jsonify({"error": "No se pudo guardar el intervalo en la base de datos"}), 500
+
+    except Exception as e:
+        logging.error(f"Error guardando intervalo de '{worker_id}': {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 
 # --- FIN DE AGREGADO ---

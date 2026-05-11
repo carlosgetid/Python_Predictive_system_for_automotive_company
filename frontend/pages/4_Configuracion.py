@@ -75,7 +75,8 @@ selected_tab = st.sidebar.radio(
         "📧 Notificaciones SMTP",
         "📊 Umbrales de Alerta",
         "⚠️ Reset BD",
-        "👥 Gestión de Usuarios"
+        "👥 Gestión de Usuarios",
+        "🚀 Pipelines"
     ],
     key="config_sidebar_nav"
 )
@@ -404,3 +405,264 @@ elif selected_tab == "👥 Gestión de Usuarios":
                             except Exception as e:
                                 st.error(f"Fallo al actualizar: {e}")
                 st.markdown("---")
+
+
+# ============================================================
+# SECCIÓN 6: PIPELINES
+# ============================================================
+elif selected_tab == "🚀 Pipelines":
+    st.markdown('<h2 style="color:#0F2942; font-size: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">🚀 Control de Pipelines Automatizados</h2>', unsafe_allow_html=True)
+    st.markdown("Monitorea y controla los workers del sistema. Los procesos **persisten incluso si recargues la página**, porque corren de forma independiente del servidor web.")
+
+    URL_PIPELINE_STATUS    = f"{BASE_URL}/api/v1/pipeline/status"
+    URL_PIPELINE_START_ALL = f"{BASE_URL}/api/v1/pipeline/start-all"
+    URL_PIPELINE_STOP_ALL  = f"{BASE_URL}/api/v1/pipeline/stop-all"
+
+    WORKER_ICONS = {
+        "worker_ingestion":  "📥",
+        "worker_retraining": "🧠",
+        "worker_metrics":    "📊",
+        "worker_alerts":     "🔔",
+    }
+
+    WORKER_DESCRIPTIONS = {
+        "worker_ingestion":  "Escanea la carpeta `/data_fuente/entrada` y procesa archivos Excel/CSV automáticamente.",
+        "worker_retraining": "Reentrena los modelos de ML con los datos más recientes de la base de datos.",
+        "worker_metrics":    "Recopila métricas de rendimiento de los modelos y las guarda en la BD.",
+        "worker_alerts":     "Verifica umbrales de inventario y envía alertas por correo si se detectan anomalías.",
+    }
+
+    WORKER_DEFAULT_MINUTES = {
+        "worker_ingestion":  1,
+        "worker_retraining": 3,
+        "worker_metrics":    5,
+        "worker_alerts":     3,
+    }
+
+    # --- Carga del estado ---
+    @st.cache_data(ttl=5)
+    def fetch_pipeline_status():
+        try:
+            r = requests.get(URL_PIPELINE_STATUS, timeout=5)
+            if r.status_code == 200:
+                return r.json()
+        except Exception as e:
+            st.error(f"Error al conectar con el backend: {e}")
+        return []
+
+    # --- Botones globales ---
+    col_glob1, col_glob2, col_glob3 = st.columns([2, 1, 1])
+    with col_glob1:
+        st.markdown("")
+    with col_glob2:
+        if st.button("▶️ Iniciar Todos", use_container_width=True, key="start_all_btn"):
+            with st.spinner("Iniciando todos los workers..."):
+                try:
+                    r = requests.post(URL_PIPELINE_START_ALL, timeout=10)
+                    data = r.json()
+                    started = [x for x in data.get("results", []) if x.get("status") == "started"]
+                    already = [x for x in data.get("results", []) if x.get("status") == "already_running"]
+                    errors  = [x for x in data.get("results", []) if x.get("status") == "error"]
+                    if started:
+                        st.toast(f"✅ {len(started)} worker(s) iniciados", icon="✅")
+                    if already:
+                        st.toast(f"ℹ️ {len(already)} ya estaban corriendo", icon="ℹ️")
+                    if errors:
+                        st.toast(f"❌ Errores en {len(errors)} worker(s)", icon="❌")
+                    fetch_pipeline_status.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+    with col_glob3:
+        if st.button("⏹️ Detener Todos", use_container_width=True, key="stop_all_btn"):
+            with st.spinner("Deteniendo todos los workers..."):
+                try:
+                    r = requests.post(URL_PIPELINE_STOP_ALL, timeout=10)
+                    data = r.json()
+                    stopped = [x for x in data.get("results", []) if x.get("status") == "stopped"]
+                    st.toast(f"⏹️ {len(stopped)} worker(s) detenidos", icon="⏹️")
+                    fetch_pipeline_status.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+    workers_status = fetch_pipeline_status()
+
+    if not workers_status:
+        st.warning("⚠️ No se pudo obtener el estado de los pipelines. Verifica que el backend esté activo.")
+    else:
+        for worker in workers_status:
+            wid     = worker["id"]
+            label   = worker["label"]
+            running = worker["running"]
+            pid     = worker.get("pid")
+            icon    = WORKER_ICONS.get(wid, "🔧")
+            desc    = WORKER_DESCRIPTIONS.get(wid, "")
+
+            # Badge de estado
+            if running:
+                badge_color  = "#10B981"
+                badge_bg     = "#D1FAE5"
+                badge_text   = f"🟢 ACTIVO (PID {pid})"
+                border_color = "#10B981"
+            else:
+                badge_color  = "#EF4444"
+                badge_bg     = "#FEE2E2"
+                badge_text   = "🔴 DETENIDO"
+                border_color = "#EF4444"
+
+            # --- Card del worker ---
+            st.markdown(f"""
+            <div class="metric-card" style="padding: 16px 20px; border-left: 4px solid {border_color}; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+                    <span style="font-size: 22px;">{icon}</span>
+                    <strong style="font-size: 16px; color: #0F2942; margin-left: 4px;">{label}</strong>
+                    <span style="padding: 3px 10px; border-radius: 20px;
+                           background-color: {badge_bg}; color: {badge_color};
+                           font-size: 12px; font-weight: 700;">
+                        {badge_text}
+                    </span>
+                </div>
+                <p style="color: #64748B; font-size: 13px; margin: 8px 0 0 0;">{desc}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # --- Obtener intervalo actual del backend ---
+            try:
+                r_iv = requests.get(f"{BASE_URL}/api/v1/pipeline/{wid}/interval", timeout=3)
+                current_minutes = r_iv.json().get("minutes", WORKER_DEFAULT_MINUTES.get(wid, 1)) if r_iv.status_code == 200 else WORKER_DEFAULT_MINUTES.get(wid, 1)
+            except Exception:
+                current_minutes = WORKER_DEFAULT_MINUTES.get(wid, 1)
+
+            # --- Fila de controles: Iniciar | Detener | Frecuencia | Guardar | Logs ---
+            col_a, col_b, col_freq, col_save, col_logs = st.columns([1, 1, 1.4, 0.9, 1.6])
+
+            with col_a:
+                if not running:
+                    if st.button("▶️ Iniciar", key=f"start_{wid}", use_container_width=True):
+                        with st.spinner(f"Iniciando {label}..."):
+                            try:
+                                r = requests.post(f"{BASE_URL}/api/v1/pipeline/{wid}/start", timeout=10)
+                                d = r.json()
+                                if r.status_code == 200:
+                                    st.toast(f"✅ {label} iniciado (PID {d.get('pid')})", icon="✅")
+                                else:
+                                    st.error(f"Error: {d.get('error', r.text)}")
+                                fetch_pipeline_status.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error de conexión: {e}")
+                else:
+                    st.button("▶️ Iniciado", key=f"start_{wid}", disabled=True, use_container_width=True)
+
+            with col_b:
+                if running:
+                    if st.button("⏹️ Detener", key=f"stop_{wid}", use_container_width=True):
+                        with st.spinner(f"Deteniendo {label}..."):
+                            try:
+                                r = requests.post(f"{BASE_URL}/api/v1/pipeline/{wid}/stop", timeout=10)
+                                d = r.json()
+                                if r.status_code == 200:
+                                    st.toast(f"⏹️ {label} detenido", icon="⏹️")
+                                else:
+                                    st.error(f"Error: {d.get('error', r.text)}")
+                                fetch_pipeline_status.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error de conexión: {e}")
+                else:
+                    st.button("⏹️ Detenido", key=f"stop_{wid}", disabled=True, use_container_width=True)
+
+            with col_freq:
+                new_minutes = st.number_input(
+                    "⏱ Frecuencia (min)",
+                    min_value=1,
+                    max_value=1440,
+                    value=int(current_minutes),
+                    step=1,
+                    key=f"freq_input_{wid}",
+                    help=f"Cada cuántos minutos se ejecuta. Valor actual guardado: {current_minutes} min. El cambio aplica al próximo ciclo sin reiniciar."
+                )
+
+            with col_save:
+                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("💾 Guardar", key=f"save_freq_{wid}", use_container_width=True):
+                    try:
+                        r = requests.post(
+                            f"{BASE_URL}/api/v1/pipeline/{wid}/interval",
+                            json={"minutes": int(new_minutes)},
+                            timeout=5
+                        )
+                        d = r.json()
+                        if r.status_code == 200:
+                            st.toast(f"✅ {label}: cada {new_minutes} min", icon="✅")
+                            st.rerun()
+                        else:
+                            st.error(f"Error: {d.get('error', r.text)}")
+                    except Exception as e:
+                        st.error(f"Error de conexión: {e}")
+
+            with col_logs:
+                log_key = f"show_logs_{wid}"
+                if log_key not in st.session_state:
+                    st.session_state[log_key] = False
+
+                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                if st.button(
+                    f"{'Ocultar 📄' if st.session_state[log_key] else 'Ver Logs 📄'}",
+                    key=f"toggle_log_{wid}",
+                    use_container_width=True
+                ):
+                    st.session_state[log_key] = not st.session_state[log_key]
+                    st.rerun()
+
+            # --- Visor de logs expandible ---
+            if st.session_state.get(f"show_logs_{wid}", False):
+                log_lines_key = f"log_lines_{wid}"
+                if log_lines_key not in st.session_state:
+                    st.session_state[log_lines_key] = 40
+
+                try:
+                    r = requests.get(
+                        f"{BASE_URL}/api/v1/pipeline/{wid}/logs",
+                        params={"lines": st.session_state[log_lines_key]},
+                        timeout=5
+                    )
+                    if r.status_code == 200:
+                        log_data = r.json()
+                        logs  = log_data.get("logs", [])
+                        total = log_data.get("total_lines", 0)
+
+                        st.markdown(f"""
+                        <div style="background-color: #0F172A; border-radius: 8px; padding: 10px 16px;
+                                    margin: 6px 0 4px 0; border: 1px solid #1E293B;">
+                            <span style="color: #38BDF8; font-size: 12px; font-weight: 700;">
+                                📄 LOG: {wid} — Últimas {len(logs)} de {total} líneas
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        log_text = "\n".join(logs) if logs else "(Sin entradas de log aún)"
+                        st.code(log_text, language="bash")
+
+                        c_ref, c_more = st.columns([1, 1])
+                        with c_ref:
+                            if st.button("🔄 Actualizar Logs", key=f"refresh_log_{wid}", use_container_width=True):
+                                st.rerun()
+                        with c_more:
+                            if st.button("⬇️ Cargar más", key=f"more_log_{wid}", use_container_width=True):
+                                st.session_state[log_lines_key] += 40
+                                st.rerun()
+                    else:
+                        st.error(f"Error al obtener logs: {r.json().get('error', r.text)}")
+                except Exception as e:
+                    st.error(f"Error de conexión al leer logs: {e}")
+
+            st.markdown("<hr style='margin: 10px 0; border-color: #E2E8F0;'>", unsafe_allow_html=True)
+
+    # --- Notas informativas ---
+    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+    st.info("💡 **Persistencia:** Los workers usan `os.setsid()` para correr en su propio grupo de procesos, independiente del servidor web. Recargar la página con Ctrl+R **no los detiene**.")
+    st.info("⏱ **Frecuencia:** El nuevo valor aplica al **próximo ciclo de espera** del worker, sin necesidad de reiniciarlo. El worker lee el archivo de configuración al final de cada tarea.")

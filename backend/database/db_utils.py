@@ -93,7 +93,11 @@ def initialize_db(engine):
                     smtp_pass VARCHAR(255) DEFAULT '',
                     email_remitente VARCHAR(255) DEFAULT 'alertas@predictivo.auto',
                     email_destinatario_alertas VARCHAR(255) DEFAULT '',
-                    perfil_destinatario_alertas VARCHAR(255) DEFAULT ''
+                    perfil_destinatario_alertas VARCHAR(255) DEFAULT '',
+                    pipeline_interval_ingestion INT DEFAULT 1,
+                    pipeline_interval_retraining INT DEFAULT 3,
+                    pipeline_interval_metrics INT DEFAULT 5,
+                    pipeline_interval_alerts INT DEFAULT 3
                 );
             """))
             
@@ -103,6 +107,19 @@ def initialize_db(engine):
                 conn.execute(text("""
                     INSERT INTO configuracion_sistema (smtp_host, smtp_port) VALUES ('smtp.gmail.com', 587)
                 """))
+
+            # Migración segura: añadir columnas de intervalos si no existen (para DBs ya existentes)
+            interval_columns = {
+                "pipeline_interval_ingestion":  "INT DEFAULT 1",
+                "pipeline_interval_retraining": "INT DEFAULT 3",
+                "pipeline_interval_metrics":    "INT DEFAULT 5",
+                "pipeline_interval_alerts":     "INT DEFAULT 3",
+            }
+            for col_name, col_def in interval_columns.items():
+                try:
+                    conn.execute(text(f"ALTER TABLE configuracion_sistema ADD COLUMN IF NOT EXISTS {col_name} {col_def};"))
+                except Exception as alt_e:
+                    logger.warning(f"No se pudo añadir columna {col_name}: {alt_e}")
                 
             # Agregar columna correo_electronico a tabla usuarios si no existe
             try:
@@ -468,4 +485,81 @@ def update_user_email(user_id: int, email: str, engine=None):
             return False
     except Exception as e:
         logger.error(f"Error al actualizar correo de usuario {user_id}: {e}", exc_info=True)
+        return False
+
+
+# --- FUNCIONES DE INTERVALOS DE PIPELINE ---
+
+PIPELINE_INTERVAL_COLUMNS = {
+    "worker_ingestion":  "pipeline_interval_ingestion",
+    "worker_retraining": "pipeline_interval_retraining",
+    "worker_metrics":    "pipeline_interval_metrics",
+    "worker_alerts":     "pipeline_interval_alerts",
+}
+
+PIPELINE_INTERVAL_DEFAULTS = {
+    "worker_ingestion":  1,
+    "worker_retraining": 3,
+    "worker_metrics":    5,
+    "worker_alerts":     3,
+}
+
+def get_pipeline_intervals(engine=None):
+    """
+    Obtiene los intervalos de ejecución de todos los workers desde la BD.
+    Retorna dict: {worker_id: minutos}
+    """
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return dict(PIPELINE_INTERVAL_DEFAULTS)
+
+    try:
+        cols = ", ".join(PIPELINE_INTERVAL_COLUMNS.values())
+        query = text(f"SELECT {cols} FROM configuracion_sistema LIMIT 1")
+        with engine.connect() as conn:
+            row = conn.execute(query).fetchone()
+            if row:
+                mapping = dict(row._mapping)
+                return {
+                    wid: int(mapping.get(col, PIPELINE_INTERVAL_DEFAULTS[wid]) or PIPELINE_INTERVAL_DEFAULTS[wid])
+                    for wid, col in PIPELINE_INTERVAL_COLUMNS.items()
+                }
+    except Exception as e:
+        logger.error(f"Error obteniendo intervalos de pipeline: {e}", exc_info=True)
+
+    return dict(PIPELINE_INTERVAL_DEFAULTS)
+
+
+def get_pipeline_interval(worker_id: str, engine=None):
+    """
+    Obtiene el intervalo (minutos) de un worker específico desde la BD.
+    """
+    intervals = get_pipeline_intervals(engine)
+    return intervals.get(worker_id, PIPELINE_INTERVAL_DEFAULTS.get(worker_id, 1))
+
+
+def set_pipeline_interval(worker_id: str, minutes: int, engine=None):
+    """
+    Guarda el intervalo (minutos) de un worker en la BD.
+    Retorna True si éxito, False si falla.
+    """
+    col = PIPELINE_INTERVAL_COLUMNS.get(worker_id)
+    if not col:
+        logger.error(f"Worker ID desconocido: {worker_id}")
+        return False
+
+    if engine is None:
+        engine = get_db_engine()
+    if engine is None:
+        return False
+
+    try:
+        query = text(f"UPDATE configuracion_sistema SET {col} = :minutes")
+        with engine.begin() as conn:
+            conn.execute(query, {"minutes": int(minutes)})
+        logger.info(f"Intervalo de '{worker_id}' actualizado a {minutes} min en BD")
+        return True
+    except Exception as e:
+        logger.error(f"Error guardando intervalo de '{worker_id}' en BD: {e}", exc_info=True)
         return False
