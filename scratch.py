@@ -1,26 +1,19 @@
 import streamlit as st
 
-if "auth" not in st.session_state:
-    st.session_state.auth = False
+if "db" not in st.session_state:
+    st.session_state.db = "A"
 
-def dashboard():
-    st.write("Dashboard")
-    if st.button("Logout"):
-        st.session_state.auth = False
-        st.rerun()
+st.write("DB value:", st.session_state.db)
 
-def login():
-    st.write("Login")
-    if st.button("Login"):
-        st.session_state.auth = True
-        st.rerun()
+options = ["A", "B", "C"]
+default_index = options.index(st.session_state.db)
 
-pg_dash = st.Page(dashboard, title="Inicio", url_path="inicio", default=True)
-pg_login = st.Page(login, title="Login", url_path="login")
+with st.form("my_form"):
+    selected = st.selectbox("Select", options, index=default_index)
+    
+    submitted = st.form_submit_button("Submit")
 
-if not st.session_state.auth:
-    pg = st.navigation([pg_login])
-    pg.run()
-else:
-    pg = st.navigation([pg_dash])
-    pg.run()
+if submitted:
+    st.session_state.db = selected
+    st.success(f"Saved: {selected}")
+    st.rerun()

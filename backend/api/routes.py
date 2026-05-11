@@ -496,6 +496,8 @@ def test_email():
         # 1. Obtener la configuración más reciente
         config = get_config_params()
         destinatario = config.get("email_destinatario_alertas")
+        perfil = config.get("perfil_destinatario_alertas", "Desconocido")
+        
         if not destinatario:
             return jsonify({"error": "No hay destinatario configurado"}), 400
 
@@ -510,7 +512,10 @@ def test_email():
         # 3. Intentar enviar
         success = send_alerts_summary(test_alert, recipient_email=destinatario)
         if success:
-            return jsonify({"message": f"Correo de prueba enviado a {destinatario}"}), 200
+            return jsonify({
+                "message": f"Correo de prueba enviado al perfil: {perfil}", 
+                "status": "success"
+            }), 200
         else:
             return jsonify({"error": "Falló el envío. Verifica las credenciales y el puerto SMTP en los logs del servidor."}), 500
     except Exception as e:
