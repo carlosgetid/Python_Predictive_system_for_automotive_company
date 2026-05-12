@@ -40,7 +40,12 @@ def get_db_engine():
     try:
         print("🔌 Intentando conectar a la Base de Datos (Inicialización)...")
         # pool_pre_ping=True ayuda a recuperar conexiones perdidas sin crashear
-        engine = create_engine(DATABASE_URI, pool_pre_ping=True)
+        engine = create_engine(
+            DATABASE_URI,
+            pool_pre_ping=True,  # Hace un "ping" silencioso para verificar si la conexión está viva antes de usarla. Si está muerta, la recrea automáticamente.
+            pool_recycle=300,    # Obliga a renovar la conexión cada 300 segundos (5 minutos), adelantándose al corte automático de Render.
+            # ... mantén cualquier otro parámetro que ya tuvieras, como echo=False
+        )
         
         # Prueba de conexión inicial
         with engine.connect() as conn:
