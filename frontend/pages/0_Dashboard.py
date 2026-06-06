@@ -14,6 +14,10 @@ except ImportError:
     def get_role_based_sidebar_css(role): return ""
     def get_app_css(): return ""
 
+# --- PROTECCIÓN DE PÁGINA (Login Required) ---
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+    st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
+    st.switch_page("pages/login.py")
 
 role_css = get_role_based_sidebar_css(st.session_state.user['rol'])
 st.markdown(role_css, unsafe_allow_html=True)

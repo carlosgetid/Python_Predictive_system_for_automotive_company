@@ -9,11 +9,10 @@ from frontend.styles import get_app_css
 # --- PROTECCIÓN DE PÁGINA ---
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
-    st.stop()
+    st.switch_page("pages/login.py")
 
 if st.session_state.user['rol'] == 'Vendedora':
-    st.error("⛔ Acceso Restringido: Su perfil no tiene permisos para cargar datos.")
-    st.stop()
+    st.switch_page("pages/error.py")
 
 
 

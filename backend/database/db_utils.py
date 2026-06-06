@@ -660,8 +660,8 @@ def get_approved_files(engine=None):
         query = text("""
             SELECT id, nombre_archivo, fecha_carga, filas_guardadas
             FROM archivos_cargados
-            WHERE estado = 'aprobado'
-            ORDER BY fecha_carga ASC
+            WHERE estado IN ('aprobado', 'procesado')
+            ORDER BY fecha_carga DESC
         """)
         with engine.connect() as conn:
             rows = conn.execute(query).fetchall()

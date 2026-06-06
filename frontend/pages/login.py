@@ -27,7 +27,19 @@ if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user = None
 
-# (BORRAMOS EL BLOQUE if st.session_state.authenticated: st.rerun() QUE ESTABA AQUÍ)
+if st.session_state.get("logout_requested", False):
+    # El usuario acaba de cerrar sesión. Limpiar las cookies físicas usando JS silencioso.
+    import streamlit.components.v1 as components
+    js = """
+        document.cookie = "auth_token=; max-age=0; path=/";
+        document.cookie = "user_data=; max-age=0; path=/";
+    """
+    components.html(f"<script>{js}</script>", height=0, width=0)
+    # Limpiar el flag para que no se re-ejecute infinitamente
+    st.session_state.logout_requested = False
+
+if st.session_state.authenticated:
+    st.switch_page("pages/0_Dashboard.py")
 
 # 1. Inyectar CSS Global
 # (El CSS Global ahora se inyecta desde Inicio.py)
@@ -86,11 +98,18 @@ with st.form("login_form"):
                         st.session_state.authenticated = True
                         st.session_state.user = data.get("user")
                         st.session_state.token = data.get("token")
+                        st.session_state.rol = data.get("user").get("rol")
+                        st.session_state.logout_requested = False
                         
-                        st.toast(f"¡Bienvenido, {st.session_state.user['nombre']}!", icon="👋")
-                        time.sleep(0.8)
-                        st.rerun()
-                        
+                        # Guardar en cookies usando JS plano e ir a /inicio instantáneamente
+                        import streamlit.components.v1 as components
+                        js = f"""
+                            document.cookie = "auth_token={data.get('token')}; max-age=7200; path=/";
+                            document.cookie = "user_data={str(data.get('user'))}; max-age=7200; path=/";
+                            window.parent.location.href = '/inicio';
+                        """
+                        components.html(f"<script>{js}</script>", height=0, width=0)
+                        st.stop()
                     elif response.status_code == 401:
                         st.error("Credenciales incorrectas. Verifique e intente nuevamente.")
                     else:

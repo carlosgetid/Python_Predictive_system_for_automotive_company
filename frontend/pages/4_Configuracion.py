@@ -22,18 +22,17 @@ except ImportError:
         BASE_URL = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
     except ImportError as e:
         st.error(f"Error crítico importando configuración: {e}")
-        st.stop()
+        st.switch_page("pages/login.py")
 
 logging.basicConfig(level=logging.INFO)
 
 # --- PROTECCIÓN DE PÁGINA ---
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
-    st.stop()
+    st.switch_page("pages/login.py")
 
 if st.session_state.user['rol'] == 'Vendedora':
-    st.error("⛔ Acceso Restringido: Su perfil no tiene permisos de configuración.")
-    st.stop()
+    st.switch_page("pages/error.py")
 
 # --- ESTILOS ---
 st.markdown(get_app_css(), unsafe_allow_html=True)

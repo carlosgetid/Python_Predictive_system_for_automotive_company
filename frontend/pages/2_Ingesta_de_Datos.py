@@ -8,11 +8,10 @@ from frontend.styles import get_app_css
 # --- PROTECCIÓN DE PÁGINA ---
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
-    st.stop()
+    st.switch_page("pages/login.py")
 
 if st.session_state.user['rol'] == 'Vendedora':
-    st.error("⛔ Acceso Restringido: Su perfil no tiene permisos para gestionar la ingesta.")
-    st.stop()
+    st.switch_page("pages/error.py")
 
 st.markdown(get_app_css(), unsafe_allow_html=True)
 
@@ -152,7 +151,7 @@ all_files = fetch_all_files()
 
 if all_files is None:
     st.error("⚠️ No se pudo conectar al backend. Verifique que el servidor esté activo.")
-    st.stop()
+    st.switch_page("pages/login.py")
 
 # Separar por estado
 validos    = [f for f in all_files if f['estado'] == 'valido']

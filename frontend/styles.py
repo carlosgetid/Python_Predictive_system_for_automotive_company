@@ -206,6 +206,12 @@ def get_app_css():
             color: #94A3B8; /* Gris tenue */
             font-style: italic;
         }
+
+        /* Ocultar las páginas técnicas del Sidebar */
+        [data-testid="stSidebarNavItems"] a[href$="/error"],
+        [data-testid="stSidebarNavItems"] a[href$="/login"] { 
+            display: none !important; 
+        }
         
     </style>
     """
@@ -227,4 +233,5 @@ def render_sidebar_profile():
     if st.button("Cerrar Sesión", type="secondary", use_container_width=True):
         st.session_state.authenticated = False
         st.session_state.user = None
-        st.rerun()
+        st.session_state.logout_requested = True
+        st.switch_page("pages/login.py")
