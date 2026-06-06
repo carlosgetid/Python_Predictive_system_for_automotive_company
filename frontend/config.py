@@ -97,13 +97,16 @@ def get_role_based_sidebar_css(role):
         return """
         <style>
             /* Ocultar enlace a Carga de Datos */
-            [data-testid="stSidebarNav"] a[href*="Carga_de_Datos"] { display: none !important; }
+            [data-testid="stSidebarNavItems"] a[href$="/carga"] { display: none !important; }
+            
+            /* Ocultar enlace a Ingesta de Datos */
+            [data-testid="stSidebarNavItems"] a[href$="/ingesta"] { display: none !important; }
             
             /* Ocultar enlace a Administración */
-            [data-testid="stSidebarNav"] a[href*="Administracion"] { display: none !important; }
+            [data-testid="stSidebarNavItems"] a[href$="/admin"] { display: none !important; }
             
             /* Ocultar enlace a Configuración */
-            [data-testid="stSidebarNav"] a[href*="Configuracion"] { display: none !important; }
+            [data-testid="stSidebarNavItems"] a[href$="/configuracion"] { display: none !important; }
         </style>
         """
     # Si es otro rol (Administrador, Logística, etc.), no ocultamos nada (retorna string vacío)

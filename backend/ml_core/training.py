@@ -54,7 +54,7 @@ def load_data_from_db():
         FROM ventas_detalle vd
         WHERE EXISTS (
             SELECT 1 FROM archivos_cargados ac
-            WHERE ac.estado = 'aprobado'
+            WHERE ac.estado IN ('aprobado', 'procesado')
               AND ac.nombre_archivo = vd.source_file
         )
         ORDER BY vd.fecha ASC

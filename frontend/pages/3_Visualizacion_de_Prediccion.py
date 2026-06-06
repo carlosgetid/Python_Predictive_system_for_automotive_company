@@ -35,7 +35,7 @@ logging.basicConfig(level=logging.INFO)
 # --- PROTECCIÓN DE PÁGINA (Login Required) ---
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.warning("⚠️ Acceso no autorizado. Por favor vaya al Inicio e inicie sesión.")
-    st.stop()
+    st.switch_page("pages/login.py")
 
 # --- RBAC VISUAL: Ocultar pestañas no permitidas ---
 # Esto asegura que Ana no vea enlaces a Admin/Carga mientras está aquí
@@ -201,65 +201,143 @@ if submit_button:
             try:
 # ... (rest of the logic)
                 # --- Llamadas a los Endpoints del Backend ---
-                response_pred = requests.post(URL_PREDICT, json=payload_predict, timeout=60)
-                response_hist = requests.post(URL_HISTORY, json=payload_history, timeout=60)
+                # Inyectar token JWT en cabeceras para acceso seguro (HU-008)
+                headers = {"Authorization": f"Bearer {st.session_state.get('token', '')}"}
+                
+                response_pred = requests.post(URL_PREDICT, json=payload_predict, headers=headers, timeout=60)
+                response_hist = requests.post(URL_HISTORY, json=payload_history, headers=headers, timeout=60)
 
-                # Dividir pantalla
-                col1, col2 = st.columns([1, 2])
+                # --- Manejo de Errores de Autenticación/Autorización ---
+                if response_pred.status_code == 401:
+                    st.error("🔒 Su sesión ha expirado o el token es inválido. Por favor, inicie sesión nuevamente.")
+                    st.session_state.authenticated = False
+                    st.session_state.user = None
+                    st.session_state.token = None
+                    st.session_state.rol = None
+                    time.sleep(2)
+                    st.rerun()
+                elif response_pred.status_code == 403:
+                    st.warning("⛔ Acceso denegado: Su rol no tiene permisos suficientes para generar predicciones.")
+                else:
+                    # Dividir pantalla
+                    col1, col2 = st.columns([1, 2])
 
-                # --- Mostrar Resultado Predicción (Col 1) ---
-                with col1:
-                    # [CORRECCIÓN] Reemplazo de st.subheader por título HTML
-                    st.markdown('<h4 style="color: #64748B; font-size: 16px; margin-bottom: 0;">Pronóstico IA</h4>', unsafe_allow_html=True)
-                    if response_pred.status_code == 200:
-                        data_pred = response_pred.json()
-                        prediccion_unidades = data_pred.get("prediccion")
+                    # --- Mostrar Resultado Predicción (Col 1) ---
+                    with col1:
+                        # [CORRECCIÓN] Reemplazo de st.subheader por título HTML
+                        st.markdown('<h4 style="color: #64748B; font-size: 16px; margin-bottom: 0;">Pronóstico IA</h4>', unsafe_allow_html=True)
+                        if response_pred.status_code == 200:
+                            data_pred = response_pred.json()
+                            prediccion_unidades = data_pred.get("prediccion")
 
-                        if prediccion_unidades is not None:
-                            # [CORRECCIÓN] Reemplazo de st.metric por HTML/CSS de alto impacto
-                            st.markdown(f"""
-                            <div style="margin-top: 10px; padding: 15px; background-color: #F8FAFC; border-radius: 8px; border: 1px solid #10B981;">
-                                <p style="font-size: 0.8rem; color: #64748B; margin-bottom: 5px;">Demanda para el {fecha_str}</p>
-                                <span class="metric-value" style="color: var(--success); font-size: 2.5rem;">
-                                    {prediccion_unidades}
-                                </span>
-                                <span style="font-size: 1.2rem; color: #334155;">unidades</span>
-                                <p style="font-size: 0.7rem; color: #94A3B8; margin-top: 5px; margin-bottom: 0;">Generado por modelo Híbrido.</p>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            if prediccion_unidades is not None:
+                                # [CORRECCIÓN] Reemplazo de st.metric por HTML/CSS de alto impacto
+                                st.markdown(f"""
+                                <div style="margin-top: 10px; padding: 15px; background-color: #F8FAFC; border-radius: 8px; border: 1px solid #10B981;">
+                                    <p style="font-size: 0.8rem; color: #64748B; margin-bottom: 5px;">Demanda para el {fecha_str}</p>
+                                    <span class="metric-value" style="color: var(--success); font-size: 2.5rem;">
+                                        {prediccion_unidades}
+                                    </span>
+                                    <span style="font-size: 1.2rem; color: #334155;">unidades</span>
+                                    <p style="font-size: 0.7rem; color: #94A3B8; margin-top: 5px; margin-bottom: 0;">Generado por modelo Híbrido.</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            else:
+                                st.error("El backend devolvió una respuesta inesperada (predicción nula).")
+
+                        elif response_pred.status_code == 404:
+                                error_msg = response_pred.json().get('error', 'Producto no encontrado o desconocido para el modelo')
+                                st.error(f"Error 404: {error_msg}")
                         else:
-                            st.error("El backend devolvió una respuesta inesperada (predicción nula).")
+                            st.error(f"Error del Backend (Predicción): {response_pred.status_code} - {response_pred.text}")
 
-                    elif response_pred.status_code == 404:
-                            error_msg = response_pred.json().get('error', 'Producto no encontrado o desconocido para el modelo')
-                            st.error(f"Error 404: {error_msg}")
-                    else:
-                        st.error(f"Error del Backend (Predicción): {response_pred.status_code} - {response_pred.text}")
+                    # --- Mostrar Historial (Col 2) ---
+                    with col2:
+                        # [CORRECCIÓN] Reemplazo de st.subheader por título HTML
+                        st.markdown('<h4 style="color: #64748B; font-size: 16px; margin-bottom: 0;">Histórico de Ventas</h4>', unsafe_allow_html=True)
+                        if response_hist.status_code == 200:
+                            data_hist = response_hist.json().get("historial", [])
 
-                # --- Mostrar Historial (Col 2) ---
-                with col2:
-                    # [CORRECCIÓN] Reemplazo de st.subheader por título HTML
-                    st.markdown('<h4 style="color: #64748B; font-size: 16px; margin-bottom: 0;">Histórico de Ventas</h4>', unsafe_allow_html=True)
-                    if response_hist.status_code == 200:
-                        data_hist = response_hist.json().get("historial", [])
-
-                        if data_hist:
-                            try:
-                                df_hist = pd.DataFrame(data_hist)
-                                df_hist['fecha'] = pd.to_datetime(df_hist['fecha'])
-                                df_hist['cantidad_vendida'] = pd.to_numeric(df_hist['cantidad_vendida'])
-                                df_hist = df_hist.set_index('fecha').sort_index()
+                            if data_hist:
+                                try:
+                                    df_hist = pd.DataFrame(data_hist)
+                                    df_hist['fecha'] = pd.to_datetime(df_hist['fecha'])
+                                    df_hist['cantidad_vendida'] = pd.to_numeric(df_hist['cantidad_vendida'])
+                                    df_hist = df_hist.set_index('fecha').sort_index()
+                                    
+                                    st.line_chart(df_hist['cantidad_vendida'], use_container_width=True)
                                 
-                                st.line_chart(df_hist['cantidad_vendida'], use_container_width=True)
-                            
-                            except Exception as e:
-                                st.error(f"Error al procesar o graficar el historial: {e}")
-                                logging.error(f"Error procesando historial: {e}", exc_info=True)
+                                except Exception as e:
+                                    st.error(f"Error al procesar o graficar el historial: {e}")
+                                    logging.error(f"Error procesando historial: {e}", exc_info=True)
 
+                            else:
+                                st.info(f"No se encontró historial de ventas para este SKU.")
                         else:
-                            st.info(f"No se encontró historial de ventas para este SKU.")
-                    else:
-                        st.error(f"Error del Backend (Historial): {response_hist.status_code} - {response_hist.text}")
+                            st.error(f"Error del Backend (Historial): {response_hist.status_code} - {response_hist.text}")
+
+                    # --- HU-004: Exportación de Reportes ---
+                    st.markdown("---")
+                    with st.expander("📥 Exportar Resultados", expanded=True):
+                        st.markdown("Seleccione el formato para descargar el reporte predictivo.")
+                        
+                        col_btn1, col_btn2 = st.columns(2)
+                        
+                        # Preparar datos para exportación
+                        import io
+                        from frontend.utils.export_utils import generate_excel_report, generate_pdf_report
+                        
+                        hist_data = response_hist.json().get("historial", []) if response_hist.status_code == 200 else []
+                        
+                        df_export = pd.DataFrame(hist_data) if hist_data else pd.DataFrame(columns=['fecha', 'cantidad_vendida'])
+                        if not df_export.empty:
+                            df_export['fecha'] = pd.to_datetime(df_export['fecha']).dt.strftime('%Y-%m-%d')
+                            df_export['Tipo'] = 'Histórico'
+                        
+                        if response_pred.status_code == 200 and data_pred.get("prediccion") is not None:
+                            df_export = pd.concat([df_export, pd.DataFrame([{
+                                'fecha': fecha_str, 
+                                'cantidad_vendida': prediccion_unidades, 
+                                'Tipo': 'Predicción'
+                            }])], ignore_index=True)
+                        
+                        # Renombrar columnas para el reporte
+                        df_export = df_export.rename(columns={'fecha': 'Fecha', 'cantidad_vendida': 'Unidades', 'Tipo': 'Tipo de Dato'})
+                        
+                        kpis = {
+                            "SKU Analizado": id_producto,
+                            "Fecha de Predicción": fecha_str,
+                            "Unidades Predichas": prediccion_unidades if response_pred.status_code == 200 else "N/A"
+                        }
+                        if hist_data:
+                            historico_vals = [float(x['cantidad_vendida']) for x in hist_data]
+                            kpis["Promedio Histórico"] = round(sum(historico_vals) / len(historico_vals), 2)
+                            kpis["Total Histórico"] = sum(historico_vals)
+                            
+                        user_name = st.session_state.user.get('nombre', 'Usuario')
+                        fecha_actual = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        
+                        with col_btn1:
+                            with st.spinner("Preparando PDF..."):
+                                pdf_bytes = generate_pdf_report(df_export, kpis, user_name, "v1.0-XGBoost-MLP")
+                            st.download_button(
+                                label="📄 Descargar PDF",
+                                data=pdf_bytes,
+                                file_name=f"reporte_prediccion_{id_producto}_{fecha_actual}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                                
+                        with col_btn2:
+                            with st.spinner("Preparando Excel..."):
+                                excel_bytes = generate_excel_report(df_export, kpis, user_name, "v1.0-XGBoost-MLP")
+                            st.download_button(
+                                label="📊 Descargar Excel",
+                                data=excel_bytes,
+                                file_name=f"reporte_prediccion_{id_producto}_{fecha_actual}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True
+                            )
 
             except requests.exceptions.ConnectionError:
                 st.error(f"Error de Conexión: No se pudo conectar al backend en {URL_PREDICT}.")

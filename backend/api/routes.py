@@ -152,6 +152,7 @@ def upload_file():
 
 # --- INICIO DE AGREGADO: Endpoint Ingesta Automatizada HU-010 ---
 @api_bp.route('/api/v1/trigger_ingestion', methods=['POST'])
+@require_role(['Administrador', 'Logistica'])
 def trigger_ingestion():
     """
     Pipeline 'Ingesta de Datos'.
@@ -435,7 +436,7 @@ def login():
                 'id': user['id'],
                 'username': user['username'],
                 'rol': user['rol'],
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=2)
             }, SECRET_KEY, algorithm="HS256")
             
             # Login Exitoso
