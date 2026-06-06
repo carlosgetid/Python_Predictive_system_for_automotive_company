@@ -276,6 +276,69 @@ if submit_button:
                         else:
                             st.error(f"Error del Backend (Historial): {response_hist.status_code} - {response_hist.text}")
 
+                    # --- HU-004: Exportación de Reportes ---
+                    st.markdown("---")
+                    with st.expander("📥 Exportar Resultados", expanded=True):
+                        st.markdown("Seleccione el formato para descargar el reporte predictivo.")
+                        
+                        col_btn1, col_btn2 = st.columns(2)
+                        
+                        # Preparar datos para exportación
+                        import io
+                        from frontend.utils.export_utils import generate_excel_report, generate_pdf_report
+                        
+                        hist_data = response_hist.json().get("historial", []) if response_hist.status_code == 200 else []
+                        
+                        df_export = pd.DataFrame(hist_data) if hist_data else pd.DataFrame(columns=['fecha', 'cantidad_vendida'])
+                        if not df_export.empty:
+                            df_export['fecha'] = pd.to_datetime(df_export['fecha']).dt.strftime('%Y-%m-%d')
+                            df_export['Tipo'] = 'Histórico'
+                        
+                        if response_pred.status_code == 200 and data_pred.get("prediccion") is not None:
+                            df_export = pd.concat([df_export, pd.DataFrame([{
+                                'fecha': fecha_str, 
+                                'cantidad_vendida': prediccion_unidades, 
+                                'Tipo': 'Predicción'
+                            }])], ignore_index=True)
+                        
+                        # Renombrar columnas para el reporte
+                        df_export = df_export.rename(columns={'fecha': 'Fecha', 'cantidad_vendida': 'Unidades', 'Tipo': 'Tipo de Dato'})
+                        
+                        kpis = {
+                            "SKU Analizado": id_producto,
+                            "Fecha de Predicción": fecha_str,
+                            "Unidades Predichas": prediccion_unidades if response_pred.status_code == 200 else "N/A"
+                        }
+                        if hist_data:
+                            historico_vals = [float(x['cantidad_vendida']) for x in hist_data]
+                            kpis["Promedio Histórico"] = round(sum(historico_vals) / len(historico_vals), 2)
+                            kpis["Total Histórico"] = sum(historico_vals)
+                            
+                        user_name = st.session_state.user.get('nombre', 'Usuario')
+                        fecha_actual = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        
+                        with col_btn1:
+                            with st.spinner("Preparando PDF..."):
+                                pdf_bytes = generate_pdf_report(df_export, kpis, user_name, "v1.0-XGBoost-MLP")
+                            st.download_button(
+                                label="📄 Descargar PDF",
+                                data=pdf_bytes,
+                                file_name=f"reporte_prediccion_{id_producto}_{fecha_actual}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                                
+                        with col_btn2:
+                            with st.spinner("Preparando Excel..."):
+                                excel_bytes = generate_excel_report(df_export, kpis, user_name, "v1.0-XGBoost-MLP")
+                            st.download_button(
+                                label="📊 Descargar Excel",
+                                data=excel_bytes,
+                                file_name=f"reporte_prediccion_{id_producto}_{fecha_actual}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True
+                            )
+
             except requests.exceptions.ConnectionError:
                 st.error(f"Error de Conexión: No se pudo conectar al backend en {URL_PREDICT}.")
             except requests.exceptions.Timeout:
