@@ -27,6 +27,9 @@ if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user = None
 
+# Contenedor dedicado para inyección de JS, evita "layout shifts" y bugs visuales (duplicación de formulario)
+js_container = st.empty()
+
 if st.session_state.get("logout_requested", False):
     # El usuario acaba de cerrar sesión. Limpiar las cookies físicas usando JS silencioso.
     import streamlit.components.v1 as components
@@ -34,7 +37,8 @@ if st.session_state.get("logout_requested", False):
         document.cookie = "auth_token=; max-age=0; path=/";
         document.cookie = "user_data=; max-age=0; path=/";
     """
-    components.html(f"<script>{js}</script>", height=0, width=0)
+    with js_container:
+        components.html(f"<script>{js}</script>", height=0, width=0)
     # Limpiar el flag para que no se re-ejecute infinitamente
     st.session_state.logout_requested = False
 
@@ -108,7 +112,8 @@ with st.form("login_form"):
                             document.cookie = "user_data={str(data.get('user'))}; max-age=7200; path=/";
                             window.parent.location.href = '/inicio';
                         """
-                        components.html(f"<script>{js}</script>", height=0, width=0)
+                        with js_container:
+                            components.html(f"<script>{js}</script>", height=0, width=0)
                         st.stop()
                     elif response.status_code == 401:
                         st.error("Credenciales incorrectas. Verifique e intente nuevamente.")
