@@ -1,0 +1,14 @@
+FROM python:3.9-slim
+WORKDIR /app
+
+# Aseguramos instalar las dependencias explícitamente
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Instalamos Gunicorn, el servidor de producción estándar para Flask
+RUN pip install gunicorn
+
+COPY . .
+
+# Ejecutamos la fábrica de la app en Flask apuntando al puerto 8000
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--timeout", "120", "backend.app:create_app()"]

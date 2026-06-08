@@ -20,9 +20,12 @@ try:
     URL_HISTORY = f"{BASE_URL}/history"
 except ImportError:
     # Fallback
-    BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
-    BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
-    BASE_URL = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
+    BACKEND_HOST = os.getenv("BACKEND_HOST", "localhost")
+    BACKEND_PORT = os.getenv("BACKEND_PORT", "8000")
+    if str(BACKEND_PORT) == "443":
+        BASE_URL = f"https://{BACKEND_HOST}"
+    else:
+        BASE_URL = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
     URL_PREDICT = f"{BASE_URL}/predict"
     URL_HISTORY = f"{BASE_URL}/history"
 

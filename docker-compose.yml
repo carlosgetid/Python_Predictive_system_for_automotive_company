@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URI=postgresql+pg8000://teo_user:teo_password_segura@predictivo-auto-db.c3y42wckoxvu.us-east-2.rds.amazonaws.com:5432/teo_db
+    restart: always
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_HOST=backend
+      - BACKEND_PORT=8000
+    depends_on:
+      - backend
+    restart: always
