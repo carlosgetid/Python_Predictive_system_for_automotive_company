@@ -3,10 +3,10 @@ import json
 from pathlib import Path
 
 # --- Configuración del Servidor Backend ---
-BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
-BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
-# Si el puerto es 443 (producción en Render), usamos https y omitimos el puerto en la URL.
-# Si es 5000 (local), usamos http con el puerto.
+BACKEND_HOST = os.getenv("BACKEND_HOST", "localhost")
+BACKEND_PORT = os.getenv("BACKEND_PORT", "8000")
+# Si el puerto es 443 (producción en Render/AWS), usamos https y omitimos el puerto en la URL.
+# Si es local, usamos http con el puerto.
 if str(BACKEND_PORT) == "443":
     BASE_URL = f"https://{BACKEND_HOST}"
 else:

@@ -69,9 +69,7 @@ st.markdown("""
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO)
-BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
-BACKEND_PORT = os.getenv("BACKEND_PORT", "5000")
-BASE_URL     = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
+from frontend.config import BASE_URL
 URL_FILES    = f"{BASE_URL}/api/v1/files"
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

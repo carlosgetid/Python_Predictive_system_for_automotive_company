@@ -14,9 +14,10 @@ root_path = Path(__file__).parent.parent.parent
 sys.path.append(str(root_path))
 
 try:
-    from frontend.config import get_role_based_sidebar_css
+    from frontend.config import get_role_based_sidebar_css, BASE_URL
 except ImportError:
     def get_role_based_sidebar_css(role: str) -> str: return ""
+    BASE_URL = "http://localhost:8000"
 
 # --- PROTECCIÓN DE PÁGINA E IDENTIDAD (HU-009) ---
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
@@ -49,7 +50,7 @@ def fetch_historical_data(id_producto: str) -> pd.DataFrame:
     Misión Crítica: Fallback a datos simulados si la API no está disponible.
     """
     try:
-        response = requests.get("http://localhost:5000/history", params={"id_producto": id_producto}, timeout=3)
+        response = requests.get(f"{BASE_URL}/history", params={"id_producto": id_producto}, timeout=3)
         response.raise_for_status()
         data = response.json()
         df = pd.DataFrame(data)
@@ -76,7 +77,7 @@ def fetch_prediction_data(id_producto: str, periodo: int) -> Dict[str, Any]:
     Misión Crítica: Fallback a proyecciones simuladas si falla la conexión.
     """
     try:
-        response = requests.get("http://localhost:5000/predict", params={"id_producto": id_producto, "periodo": periodo}, timeout=3)
+        response = requests.get(f"{BASE_URL}/predict", params={"id_producto": id_producto, "periodo": periodo}, timeout=3)
         response.raise_for_status()
         return response.json()
     except Exception:
@@ -113,7 +114,7 @@ def fetch_prediction_data(id_producto: str, periodo: int) -> Dict[str, Any]:
 # Comprobar estado real del servidor para notificar al usuario
 backend_status = False
 try:
-    if requests.get("http://localhost:5000/health", timeout=1).status_code == 200:
+    if requests.get(f"{BASE_URL}/health", timeout=1).status_code == 200:
         backend_status = True
 except:
     pass
