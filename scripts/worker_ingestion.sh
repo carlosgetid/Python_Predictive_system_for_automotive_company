@@ -7,7 +7,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Apuntamos a la carpeta logs que está AL LADO del script
 LOG_FILE="$SCRIPT_DIR/logs/ingestion.log"
 INTERVAL_FILE="$SCRIPT_DIR/pids/worker_ingestion.interval"
-API_URL="http://127.0.0.1:5000/api/v1/trigger_ingestion"
+API_URL="http://127.0.0.1:8000/api/v1/trigger_ingestion"
 
 # Asegurar que las carpetas existan
 mkdir -p "$SCRIPT_DIR/logs"

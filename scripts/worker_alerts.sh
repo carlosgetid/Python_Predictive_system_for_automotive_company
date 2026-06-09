@@ -4,7 +4,7 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LOG_FILE="$SCRIPT_DIR/logs/alerts.log"
 INTERVAL_FILE="$SCRIPT_DIR/pids/worker_alerts.interval"
-API_URL="http://localhost:5000/api/jobs/generate-alerts"
+API_URL="http://127.0.0.1:8000/api/jobs/generate-alerts"
 
 mkdir -p "$SCRIPT_DIR/logs"
 mkdir -p "$SCRIPT_DIR/pids"
