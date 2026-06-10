@@ -4,7 +4,7 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LOG_FILE="$SCRIPT_DIR/logs/metrics.log"
 INTERVAL_FILE="$SCRIPT_DIR/pids/worker_metrics.interval"
-API_URL="http://127.0.0.1:5000/api/v1/metrics"
+API_URL="http://127.0.0.1:8000/api/v1/metrics"
 
 mkdir -p "$SCRIPT_DIR/logs"
 mkdir -p "$SCRIPT_DIR/pids"

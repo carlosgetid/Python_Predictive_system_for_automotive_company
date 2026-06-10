@@ -5,6 +5,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Aseguramos instalar dependencias del sistema y pip
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 # Instalamos Gunicorn, el servidor de producción estándar para Flask
 RUN pip install gunicorn
 
